@@ -1,0 +1,64 @@
+# Rendered from chrony.conf.template by entrypoint.sh.
+# Placeholders below (@...@) are substituted at container start.
+
+# --- Refclock: SignalK GPS via SOCK ------------------------------------------
+# refid SIGK: identifies this as the SignalK-sourced GPS feed.
+# precision 0.3: 300ms. This is being honest about SignalK's real accuracy.
+#   WebSocket delivery has ~100-250ms systematic bias plus jitter. Claiming
+#   tighter precision makes chrony reject SIGK as a falseticker when compared
+#   to Starlink (which is microsecond-accurate). With 300ms error bars, SIGK's
+#   range overlaps Starlink's position, so chrony can still select Starlink
+#   while keeping SIGK as a valid fallback. When SIGK is the only source
+#   available, it's selected regardless of precision.
+# delay 0.1: round-trip estimate; conservative for local IPC.
+# filter 32: keep a 32-sample median filter. SignalK deltas have bursty
+#   delivery (up to ~1s of jitter on a single sample). The median filter
+#   discards outliers and produces one stable cooked sample per poll.
+# poll 3: produce one filtered sample every 2^3 = 8 seconds. Enough to
+#   collect ~16 samples at the 2Hz SignalK delta rate.
+# dpoll -1: expect incoming samples every 2^-1 = 0.5s (matches 2Hz SignalK).
+# No `prefer` or `trust`: let chrony's selection algorithm decide naturally.
+#   With honest precision claims, chrony picks the highest-quality source
+#   (Starlink when present, SIGK otherwise) without needing overrides.
+@REFCLOCK_GPS@
+
+# --- Starlink NTP source (optional) ------------------------------------------
+# Rendered only when STARLINK_NTP_IP is set. Starlink dishes run a stratum 1
+# NTP server serving GPS time on their LAN (usually 192.168.100.1).
+@STARLINK@
+
+# --- Internet fallback pool --------------------------------------------------
+@FALLBACK_POOL@
+
+# --- Serving ----------------------------------------------------------------
+@ALLOW_SUBNETS@
+
+# Keep a much larger client log than the 512KB default so the UI can show
+# the full list of LAN devices that have ever queried us. 64MB holds on the
+# order of a million entries — effectively unbounded for a boat LAN.
+# Without this, chrony evicts least-recently-used clients once the default
+# limit is hit, making them vanish from the UI after a short period.
+clientloglimit 67108864
+
+# Keep serving LAN if ALL sources die, using our internal disciplined clock.
+# Stratum 10 = "less preferred than any real source."
+# orphan = only active when nothing else works.
+local stratum 10 orphan
+
+# --- Clock discipline --------------------------------------------------------
+# @MAKESTEP@ = `makestep 1.0 3` or `makestep 0 0` depending on SET_HOST_CLOCK.
+@MAKESTEP@
+# @RTCSYNC@ = `rtcsync` or empty depending on SET_HOST_CLOCK.
+@RTCSYNC@
+
+driftfile /data/chrony.drift
+
+# --- Logging ----------------------------------------------------------------
+logdir /var/log/chrony
+log tracking measurements statistics refclocks
+
+# --- Command port (chronyc) --------------------------------------------------
+# chronyc from inside the container (via docker exec) only.
+bindcmdaddress 127.0.0.1
+bindcmdaddress ::1
+cmdallow 127.0.0.1

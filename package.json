@@ -1,0 +1,26 @@
+{
+  "name": "boat-time",
+  "version": "0.1.0",
+  "description": "Docker-based NTP server for boats — serves GPS-disciplined time to your LAN from SignalK, Starlink, or other onboard time sources",
+  "keywords": [
+    "signalk",
+    "starlink",
+    "ntp",
+    "chrony",
+    "gps",
+    "time-server",
+    "boat",
+    "marine",
+    "nmea2000"
+  ],
+  "author": "ofernander",
+  "license": "GPL-3.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ofernander/boat-time"
+  },
+  "homepage": "https://github.com/ofernander/boat-time",
+  "bugs": {
+    "url": "https://github.com/ofernander/boat-time/issues"
+  }
+}

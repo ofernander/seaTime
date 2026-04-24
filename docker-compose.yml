@@ -1,0 +1,26 @@
+services:
+  boat-time:
+    build: .
+    container_name: boat-time
+    hostname: boat-time
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "123:123/udp"
+      - "8123:8123/tcp"
+    cap_add:
+      - SYS_TIME
+    volumes:
+      - ./data:/data
+      # Bind-mount the host timezone so the web UI reflects actual host time.
+      # If these files don't exist on your host (rare, but possible on non-
+      # standard Linux setups), the bridge falls back to UTC.
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+    healthcheck:
+      test: ["CMD", "sh", "-c", "chronyc tracking >/dev/null && wget -qO- http://localhost:8123/api/status >/dev/null"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s

@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>boat-time</title>
+<style>
+  :root {
+    --bg: #0f1419;
+    --surface: #1a1f26;
+    --surface-2: #222831;
+    --border: #2a313c;
+    --text: #e6e9ef;
+    --text-dim: #8a93a3;
+    --text-faint: #5a6170;
+    --accent: #5eb3ff;
+    --ok: #3ddc84;
+    --ok-bg: rgba(61, 220, 132, 0.12);
+    --warn: #f5b342;
+    --warn-bg: rgba(245, 179, 66, 0.12);
+    --err: #ff6b6b;
+    --err-bg: rgba(255, 107, 107, 0.12);
+    --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
+  body { padding: 1rem; max-width: 1100px; margin: 0 auto; }
+
+  .banner { display: none; background: var(--err-bg); color: var(--err); padding: 10px 14px; border-radius: 8px; font-size: 13px; margin-bottom: 1rem; border: 1px solid rgba(255, 107, 107, 0.3); }
+  .banner.show { display: block; }
+
+  .hero { text-align: center; padding: 2rem 0 2.5rem; border-bottom: 1px solid var(--border); margin-bottom: 1.5rem; }
+  .clock-label { font-size: 12px; color: var(--text-dim); margin: 0 0 0.75rem; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 500; }
+  .clock { font-family: var(--font-mono); font-size: clamp(56px, 10vw, 104px); font-weight: 500; letter-spacing: -2px; line-height: 1.05; margin: 0; color: var(--text); }
+  .clock-date { font-size: 13px; color: var(--text-dim); margin: 0.75rem 0 0; font-family: var(--font-mono); }
+
+  .status-pill { display: inline-flex; align-items: center; gap: 8px; margin-top: 1.25rem; padding: 7px 16px; border-radius: 999px; font-size: 13px; font-weight: 500; }
+  .status-pill.ok { background: var(--ok-bg); color: var(--ok); }
+  .status-pill.warn { background: var(--warn-bg); color: var(--warn); }
+  .status-pill.err { background: var(--err-bg); color: var(--err); }
+  .status-pill .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; margin-bottom: 12px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 1rem 1.25rem; }
+  .card h3 { font-size: 12px; font-weight: 500; color: var(--text-dim); margin: 0 0 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; }
+
+  .row { display: flex; justify-content: space-between; padding: 7px 0; font-size: 13px; border-bottom: 1px solid var(--border); gap: 12px; }
+  .row:last-child { border-bottom: none; }
+  .row .k { color: var(--text-dim); flex-shrink: 0; }
+  .row .v { font-family: var(--font-mono); color: var(--text); text-align: right; word-break: break-all; }
+  .row.err .v { color: var(--err); }
+
+  table.data { width: 100%; font-size: 13px; border-collapse: collapse; }
+  table.data th { text-align: left; color: var(--text-dim); font-weight: 500; padding: 8px 10px 8px 0; border-bottom: 1px solid var(--border); font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+  table.data td { padding: 8px 10px 8px 0; border-bottom: 1px solid var(--border); font-family: var(--font-mono); }
+  table.data tr:last-child td { border-bottom: none; }
+  table.data tr.active td { color: var(--ok); font-weight: 500; }
+
+  .empty { font-size: 13px; color: var(--text-faint); font-style: italic; padding: 8px 0; }
+
+  .footer { text-align: center; padding: 2rem 0 1rem; font-size: 12px; color: var(--text-faint); font-family: var(--font-mono); }
+  .footer a { color: var(--text-dim); text-decoration: none; }
+  .footer a:hover { color: var(--accent); text-decoration: underline; }
+  .footer-sep { margin: 0 0.5em; }
+
+  /* Access request UI */
+  .auth-block { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
+  .auth-btn { display: block; width: 100%; padding: 10px 14px; font-size: 13px; font-weight: 500;
+              background: var(--accent); color: #0b1a2b; border: none; border-radius: 8px;
+              cursor: pointer; font-family: var(--font-sans); }
+  .auth-btn:hover { filter: brightness(1.1); }
+  .auth-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+  .auth-btn.secondary { background: transparent; color: var(--text); border: 1px solid var(--border); }
+  .auth-note { font-size: 12px; color: var(--text-dim); margin-top: 8px; line-height: 1.5; }
+  .auth-note a { color: var(--accent); text-decoration: none; }
+  .auth-note a:hover { text-decoration: underline; }
+  .auth-status { font-size: 13px; padding: 8px 0; }
+  .auth-status.pending { color: var(--warn); }
+  .auth-status.denied { color: var(--err); }
+  .auth-status.approved { color: var(--ok); }
+</style>
+</head>
+<body>
+
+<div class="banner" id="banner"></div>
+
+<div class="hero">
+  <p class="clock-label">NTP TIME (UTC)</p>
+  <p class="clock" id="clock">--:--:--</p>
+  <p class="clock-date" id="date">—</p>
+  <div class="status-pill" id="status-pill"><span class="dot"></span><span id="status-text">connecting…</span></div>
+</div>
+
+<div class="grid">
+  <div class="card">
+    <h3>SignalK</h3>
+    <div id="sk-rows"></div>
+  </div>
+  <div class="card">
+    <h3>Chrony</h3>
+    <div id="ch-rows"></div>
+  </div>
+</div>
+
+<div class="card" style="margin-bottom: 12px;">
+  <h3>Sources</h3>
+  <div id="sources-body"></div>
+</div>
+
+<div class="card">
+  <h3>LAN clients</h3>
+  <div id="clients-body"></div>
+</div>
+
+<footer class="footer">
+  <span id="footer-version">boat-time</span>
+  <span class="footer-sep">-</span>
+  <a id="footer-link" href="#" target="_blank" rel="noopener">GitHub</a>
+</footer>
+
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+
+  // ---- Single clock showing the time chrony is serving to LAN clients ----
+  // Anchored from data.served.time_utc, which comes from the bridge making
+  // an NTP query to 127.0.0.1:123 — exactly what real LAN clients see.
+  // Tick forward locally between API polls by adding elapsed browser time
+  // to the anchor.
+  var clockAnchor = null;  // { baseMs, receivedAt }
+
+  function pad(n) { return String(n).padStart(2, "0"); }
+
+  function formatClockUTC(d) {
+    return pad(d.getUTCHours()) + ":" + pad(d.getUTCMinutes()) + ":" + pad(d.getUTCSeconds());
+  }
+  function formatDateUTC(d) {
+    return d.toLocaleDateString("en-US", {
+      timeZone: "UTC", weekday: "long", month: "long", day: "numeric", year: "numeric"
+    });
+  }
+
+  function currentDate(anchor) {
+    if (!anchor) return null;
+    return new Date(anchor.baseMs + (Date.now() - anchor.receivedAt));
+  }
+
+  function tickClock() {
+    var d = currentDate(clockAnchor);
+    if (d) {
+      $("clock").textContent = formatClockUTC(d);
+      $("date").textContent = formatDateUTC(d);
+    }
+  }
+  setInterval(tickClock, 1000);
+
+  // ---- Helpers ----
+
+  function formatAgo(sec) {
+    if (sec == null) return "never";
+    if (sec < 1) return (sec * 1000).toFixed(0) + "ms ago";
+    if (sec < 60) return sec.toFixed(1) + "s ago";
+    if (sec < 3600) return Math.round(sec / 60) + "m ago";
+    return Math.round(sec / 3600) + "h ago";
+  }
+
+  function escapeHtml(s) {
+    if (s == null) return "";
+    return String(s)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+  }
+
+  function row(k, v, cls) {
+    return '<div class="row ' + (cls || "") + '"><span class="k">' + escapeHtml(k) + '</span><span class="v">' + escapeHtml(v == null ? "—" : v) + '</span></div>';
+  }
+
+  // ---- State-driven rendering ----
+
+  function computeStatus(data) {
+    var sk = data.signalk || {};
+    var tracking = (data.chrony && data.chrony.tracking) || {};
+    var srcCfg = data.sources || {};
+    var stratum = parseInt(tracking["Stratum"], 10);
+    var refId = tracking["Reference ID"] || "";
+
+    if (sk.auth_mode === "failed") {
+      return { level: "err", text: "auth failed · " + (sk.last_error || "see SignalK panel") };
+    }
+    if (!isFinite(stratum) || stratum >= 16) {
+      return { level: "err", text: "chrony unsynced · no working sources" };
+    }
+    // Reference ID looks like "HEXHEX (name)" where `name` is a refid or IP.
+    var refMatch = refId.match(/\(([^)]+)\)/);
+    var refShort = refMatch ? refMatch[1] : refId;
+
+    var starlinkIp = srcCfg.starlink_ip || "";
+    var isSignalK = refShort === "SIGK";
+    var isStarlink = starlinkIp && (refShort === starlinkIp || refShort.indexOf(starlinkIp) !== -1);
+
+    if (isSignalK && sk.connected && !sk.is_stale) {
+      return { level: "ok", text: "SignalK sync · stratum " + stratum };
+    }
+    if (isStarlink) {
+      return { level: "ok", text: "Starlink sync · stratum " + stratum };
+    }
+    if (isSignalK) {
+      return { level: "warn", text: "SignalK source selected but data stale · stratum " + stratum };
+    }
+    return { level: "warn", text: "fallback source · stratum " + stratum + " · " + (refShort || "?") };
+  }
+
+  function renderStatusPill(status) {
+    var pill = $("status-pill");
+    pill.className = "status-pill " + status.level;
+    $("status-text").textContent = status.text;
+  }
+
+  function renderAuthBlock(sk) {
+    if (!sk) return "";
+    if (!sk.needs_access) return "";
+
+    var ar = sk.access_request || {};
+    var state = ar.state || "idle";
+    var approveUrl = ar.approve_url || "";
+    var err = ar.error || "";
+
+    if (state === "pending") {
+      return '<div class="auth-block">' +
+        '<div class="auth-status pending">Waiting for admin approval…</div>' +
+        (approveUrl ? '<div class="auth-note">Approve in SignalK: <a href="' + escapeHtml(approveUrl) + '" target="_blank" rel="noopener">Security → Access Requests ↗</a></div>' : '') +
+      '</div>';
+    }
+
+    if (state === "approved") {
+      return '<div class="auth-block"><div class="auth-status approved">Access approved — reconnecting…</div></div>';
+    }
+
+    if (state === "denied") {
+      return '<div class="auth-block">' +
+        '<div class="auth-status denied">Access ' + (err ? escapeHtml(err) : "denied") + '</div>' +
+        '<button class="auth-btn" id="auth-request-btn">Request again</button>' +
+      '</div>';
+    }
+
+    return '<div class="auth-block">' +
+      '<button class="auth-btn" id="auth-request-btn">Request SignalK access</button>' +
+      '<div class="auth-note">Your SignalK server requires authentication. Click to request access — you\'ll approve the request in the SignalK admin UI.</div>' +
+    '</div>';
+  }
+
+  function wireAuthButton() {
+    var btn = document.getElementById("auth-request-btn");
+    if (!btn) return;
+    btn.addEventListener("click", function () {
+      btn.disabled = true;
+      btn.textContent = "Sending request…";
+      fetch("/api/request-access", { method: "POST" })
+        .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
+        .then(function (res) {
+          if (!res.ok) {
+            btn.disabled = false;
+            btn.textContent = "Request failed — try again";
+          }
+        })
+        .catch(function () {
+          btn.disabled = false;
+          btn.textContent = "Request failed — try again";
+        });
+    });
+  }
+
+  function renderSignalK(data) {
+    var sk = data.signalk || {};
+    var cs = data.chrony_socket || {};
+    var host = $("sk-rows");
+    if (!sk) { host.innerHTML = '<div class="empty">no data</div>'; return; }
+
+    if (sk.auth_mode === "failed") {
+      host.innerHTML =
+        row("Auth mode", "failed", "err") +
+        row("Error", sk.last_error || "unknown", "err") +
+        row("URL", sk.url) +
+        row("Path", sk.path) +
+        renderAuthBlock(sk);
+      wireAuthButton();
+      return;
+    }
+
+    var ago = sk.seconds_since_last_delta;
+    var agoText = ago == null ? "never" : formatAgo(ago);
+    var agoClass = sk.is_stale ? "err" : "";
+
+    host.innerHTML =
+      row("Connection", sk.connected ? "connected" : "disconnected", sk.connected ? "" : "err") +
+      row("Host", sk.url) +
+      row("Auth mode", sk.auth_mode) +
+      row("Path", sk.path) +
+      row("Last delta", agoText, agoClass) +
+      row("Last value", sk.last_datetime_value) +
+      row("Samples sent", cs.samples_sent != null ? cs.samples_sent.toLocaleString() : "—") +
+      renderAuthBlock(sk);
+    wireAuthButton();
+  }
+
+  function renderChrony(data) {
+    var host = $("ch-rows");
+    var tracking = (data.chrony && data.chrony.tracking) || {};
+    if (!Object.keys(tracking).length) {
+      host.innerHTML = '<div class="empty">chrony not responding</div>';
+      return;
+    }
+    host.innerHTML =
+      row("Stratum", tracking["Stratum"]) +
+      row("Reference ID", tracking["Reference ID"]) +
+      row("System time", tracking["System time"]) +
+      row("Last offset", tracking["Last offset"]) +
+      row("RMS offset", tracking["RMS offset"]) +
+      row("Update interval", tracking["Update interval"]) +
+      row("Leap status", tracking["Leap status"]);
+  }
+
+  function renderSources(data) {
+    var host = $("sources-body");
+    var sources = (data.chrony && data.chrony.sources) || [];
+    var srcCfg = data.sources || {};
+    var starlinkIp = srcCfg.starlink_ip || "";
+    if (!sources.length) {
+      host.innerHTML = '<div class="empty">no sources reporting</div>';
+      return;
+    }
+    var rows = sources.map(function (s) {
+      var active = s.state && s.state.indexOf("*") !== -1;
+      var displayName = s.name;
+      if (starlinkIp && s.name === starlinkIp) {
+        displayName = "Starlink";
+      } else if (s.name === "SIGK") {
+        displayName = "SignalK";
+      }
+      return '<tr class="' + (active ? "active" : "") + '">' +
+        "<td>" + escapeHtml(s.state) + "</td>" +
+        "<td>" + escapeHtml(displayName) + "</td>" +
+        "<td>" + s.stratum + "</td>" +
+        "<td>" + s.reach + "</td>" +
+        "<td>" + escapeHtml(s.last_rx) + "</td>" +
+        "<td>" + escapeHtml(s.last_sample) + "</td>" +
+      "</tr>";
+    }).join("");
+    host.innerHTML =
+      '<table class="data"><thead><tr>' +
+      "<th>State</th><th>Source</th><th>Stratum</th><th>Reach</th><th>Last rx</th><th>Last sample</th>" +
+      "</tr></thead><tbody>" + rows + "</tbody></table>";
+  }
+
+  function renderClients(data) {
+    var host = $("clients-body");
+    var clients = (data.chrony && data.chrony.clients) || [];
+    if (!clients.length) {
+      host.innerHTML = '<div class="empty">no LAN clients yet — they will appear once they query the server</div>';
+      return;
+    }
+    var rows = clients.map(function (c) {
+      return "<tr>" +
+        "<td>" + escapeHtml(c.host) + "</td>" +
+        "<td>" + c.ntp_requests + "</td>" +
+        "<td>" + c.drops + "</td>" +
+        "<td>" + escapeHtml(c.last_seen) + "</td>" +
+      "</tr>";
+    }).join("");
+    host.innerHTML =
+      '<table class="data"><thead><tr>' +
+      "<th>Host</th><th>NTP requests</th><th>Drops</th><th>Last seen</th>" +
+      "</tr></thead><tbody>" + rows + "</tbody></table>";
+  }
+
+  function renderFooter(data) {
+    var app = data.app || {};
+    var version = app.version ? ("boat-time v" + app.version) : "boat-time";
+    $("footer-version").textContent = version;
+    if (app.homepage) {
+      $("footer-link").href = app.homepage;
+      $("footer-link").style.display = "";
+    } else {
+      $("footer-link").style.display = "none";
+    }
+  }
+
+  function render(data) {
+    // Anchor clock from the NTP-served time chrony gives LAN clients.
+    var served = data.served || {};
+    if (served.time_utc) {
+      var ms = Date.parse(served.time_utc);
+      if (isFinite(ms)) {
+        clockAnchor = { baseMs: ms, receivedAt: Date.now() };
+      }
+    }
+    tickClock();
+
+    renderStatusPill(computeStatus(data));
+    renderSignalK(data);
+    renderChrony(data);
+    renderSources(data);
+    renderClients(data);
+    renderFooter(data);
+  }
+
+  // ---- Poll ----
+
+  function showBanner(msg) {
+    var b = $("banner");
+    b.textContent = msg;
+    b.classList.add("show");
+  }
+  function hideBanner() { $("banner").classList.remove("show"); }
+
+  function poll() {
+    fetch("/api/status", { cache: "no-store" })
+      .then(function (r) {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      })
+      .then(function (data) {
+        hideBanner();
+        render(data);
+      })
+      .catch(function (e) {
+        showBanner("Lost connection to bridge — retrying… (" + e.message + ")");
+      });
+  }
+
+  poll();
+  setInterval(poll, 2000);
+})();
+</script>
+</body>
+</html>
