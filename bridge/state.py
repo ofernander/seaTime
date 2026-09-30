@@ -1,6 +1,7 @@
 """Shared in-memory state for the status endpoint."""
 
 import time
+from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from os import environ
@@ -10,7 +11,9 @@ from typing import Optional
 from bridge.config import (
     SIGNALK_URL, SIGNALK_ENABLED, SIGNALK_PATH, SOCK_PATH, STALE_THRESHOLD_SEC,
     STARLINK_NTP_IP, USB_GPS_DEVICE, USB_GPS_BAUD, USB_GPS_OFFSET,
-    USB_GPS_SOCK_PATH, VERSION, HOMEPAGE,
+    USB_GPS_SOCK_PATH, NMEA_TCP_HOST, NMEA_TCP_PORT, NMEA_TCP_OFFSET,
+    NMEA_TCP_SOCK_PATH,
+    VERSION, HOMEPAGE,
 )
 
 
@@ -41,6 +44,50 @@ def _host_tz() -> str:
 
 
 @dataclass
+class SourceState:
+    """Runtime stats for one GNSS time source the bridge feeds to chrony.
+
+    Mutated from that source's reader thread.
+    """
+    connected: bool = False
+    has_fix: bool = False
+    satellites: Optional[int] = None
+    last_sample_at: Optional[float] = None
+    last_datetime_value: Optional[str] = None
+    samples_sent: int = 0
+    last_sample_offset: Optional[float] = None
+    last_error: Optional[str] = None
+    sentences_received: int = 0
+    recent_sentences: deque = field(default_factory=lambda: deque(maxlen=10))
+
+    def record(self, line: str):
+        self.sentences_received += 1
+        self.recent_sentences.append(line)
+
+    def snapshot(self, now: float) -> dict:
+        return {
+            "connected": self.connected,
+            "has_fix": self.has_fix,
+            "satellites": self.satellites,
+            "last_sample_received_at": _iso(self.last_sample_at),
+            "last_datetime_value": self.last_datetime_value,
+            "seconds_since_last_sample": (
+                round(now - self.last_sample_at, 3)
+                if self.last_sample_at else None
+            ),
+            "is_stale": (
+                self.last_sample_at is None
+                or (now - self.last_sample_at) > STALE_THRESHOLD_SEC
+            ),
+            "sentences_received": self.sentences_received,
+            "recent_sentences": list(self.recent_sentences),
+            "samples_sent": self.samples_sent,
+            "last_sample_offset_seconds": self.last_sample_offset,
+            "last_error": self.last_error,
+        }
+
+
+@dataclass
 class State:
     started_at: float = field(default_factory=time.time)
     signalk_connected: bool = False
@@ -55,25 +102,16 @@ class State:
     access_request_state: str = "idle"  # idle | pending | approved | denied
     access_request_approve_url: Optional[str] = None  # SignalK admin UI URL for user to click
     access_request_error: Optional[str] = None
-    # USB GPS puck (mutated from the usb-gps thread)
-    usb_gps_connected: bool = False
+    # USB GPS puck
+    usb_gps: SourceState = field(default_factory=SourceState)
     usb_gps_baud: Optional[int] = None
-    usb_gps_has_fix: bool = False
-    usb_gps_satellites: Optional[int] = None
-    usb_gps_last_sample_at: Optional[float] = None
-    usb_gps_last_datetime_value: Optional[str] = None
-    usb_gps_samples_sent: int = 0
-    usb_gps_last_sample_offset: Optional[float] = None
-    usb_gps_last_error: Optional[str] = None
+    # NMEA 0183 over TCP
+    nmea_tcp: SourceState = field(default_factory=SourceState)
 
     def snapshot(self) -> dict:
         now = time.time()
         seconds_since = (
             round(now - self.last_delta_at, 3) if self.last_delta_at else None
-        )
-        usb_seconds_since = (
-            round(now - self.usb_gps_last_sample_at, 3)
-            if self.usb_gps_last_sample_at else None
         )
         return {
             "signalk": {
@@ -107,21 +145,17 @@ class State:
                 "device": USB_GPS_DEVICE or None,
                 "configured_baud": USB_GPS_BAUD or "auto",
                 "baud": self.usb_gps_baud,
-                "connected": self.usb_gps_connected,
-                "has_fix": self.usb_gps_has_fix,
-                "satellites": self.usb_gps_satellites,
-                "last_sample_received_at": _iso(self.usb_gps_last_sample_at),
-                "last_datetime_value": self.usb_gps_last_datetime_value,
-                "seconds_since_last_sample": usb_seconds_since,
-                "is_stale": (
-                    self.usb_gps_last_sample_at is None
-                    or (now - self.usb_gps_last_sample_at) > STALE_THRESHOLD_SEC
-                ),
-                "samples_sent": self.usb_gps_samples_sent,
-                "last_sample_offset_seconds": self.usb_gps_last_sample_offset,
+                **self.usb_gps.snapshot(now),
                 "offset_compensation_seconds": USB_GPS_OFFSET,
                 "sock_path": USB_GPS_SOCK_PATH,
-                "last_error": self.usb_gps_last_error,
+            },
+            "nmea_tcp": {
+                "enabled": bool(NMEA_TCP_HOST),
+                "host": NMEA_TCP_HOST or None,
+                "port": NMEA_TCP_PORT or None,
+                **self.nmea_tcp.snapshot(now),
+                "offset_compensation_seconds": NMEA_TCP_OFFSET,
+                "sock_path": NMEA_TCP_SOCK_PATH,
             },
             "sources": {
                 "starlink_ip": STARLINK_NTP_IP or None,

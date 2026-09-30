@@ -45,6 +45,16 @@
   .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 1rem 1.25rem; }
   .card h3 { font-size: 12px; font-weight: 500; color: var(--text-dim); margin: 0 0 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; }
 
+  .card h3.subhead { margin-top: 1.25rem; }
+
+  /* Dividers are drawn as each tile's right/bottom shadow; the outer ones are
+     clipped by overflow, so an empty slot in a wrapped last row stays blank. */
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .stat { padding: 10px 12px; min-width: 0; box-shadow: 1px 0 0 var(--border), 0 1px 0 var(--border); }
+  .stat .k { font-size: 12px; color: var(--text-dim); margin-bottom: 4px; }
+  .stat .v { font-family: var(--font-mono); font-size: 13px; color: var(--text); overflow-wrap: anywhere; }
+  .stats > .empty { padding: 10px 12px; grid-column: 1 / -1; }
+
   .row { display: flex; justify-content: space-between; padding: 7px 0; font-size: 13px; border-bottom: 1px solid var(--border); gap: 12px; }
   .row:last-child { border-bottom: none; }
   .row .k { color: var(--text-dim); flex-shrink: 0; }
@@ -92,6 +102,13 @@
   <div class="status-pill" id="status-pill"><span class="dot"></span><span id="status-text">connecting…</span></div>
 </div>
 
+<div class="card" style="margin-bottom: 12px;">
+  <h3>Chrony</h3>
+  <div id="ch-rows" class="stats"></div>
+  <h3 class="subhead">Sources</h3>
+  <div id="sources-body"></div>
+</div>
+
 <div class="grid">
   <div class="card" id="sk-card">
     <h3>SignalK</h3>
@@ -101,15 +118,10 @@
     <h3>USB GPS</h3>
     <div id="usb-rows"></div>
   </div>
-  <div class="card">
-    <h3>Chrony</h3>
-    <div id="ch-rows"></div>
+  <div class="card" id="tcp-card" style="display: none;">
+    <h3>NMEA 0183 (TCP)</h3>
+    <div id="tcp-rows"></div>
   </div>
-</div>
-
-<div class="card" style="margin-bottom: 12px;">
-  <h3>Sources</h3>
-  <div id="sources-body"></div>
 </div>
 
 <div class="card">
@@ -180,11 +192,16 @@
     return '<div class="row ' + (cls || "") + '"><span class="k">' + escapeHtml(k) + '</span><span class="v">' + escapeHtml(v == null ? "—" : v) + '</span></div>';
   }
 
+  function stat(k, v) {
+    return '<div class="stat"><div class="k">' + escapeHtml(k) + '</div><div class="v">' + escapeHtml(v == null ? "—" : v) + '</div></div>';
+  }
+
   // ---- State-driven rendering ----
 
   function computeStatus(data) {
     var sk = data.signalk || {};
     var usb = data.usb_gps || {};
+    var tcp = data.nmea_tcp || {};
     var tracking = (data.chrony && data.chrony.tracking) || {};
     var srcCfg = data.sources || {};
     var stratum = parseInt(tracking["Stratum"], 10);
@@ -202,7 +219,8 @@
 
     var starlinkIp = srcCfg.starlink_ip || "";
     var isSignalK = refShort === "SIGK";
-    var isUsbGps = refShort === "NMEA";
+    var isUsbGps = refShort === "USB";
+    var isNmeaTcp = refShort === "NTCP";
     var isStarlink = starlinkIp && (refShort === starlinkIp || refShort.indexOf(starlinkIp) !== -1);
 
     if (isSignalK && sk.connected && !sk.is_stale) {
@@ -210,6 +228,9 @@
     }
     if (isUsbGps && usb.connected && !usb.is_stale) {
       return { level: "ok", text: "USB GPS sync · stratum " + stratum };
+    }
+    if (isNmeaTcp && tcp.connected && !tcp.is_stale) {
+      return { level: "ok", text: "NMEA TCP sync · stratum " + stratum };
     }
     if (isStarlink) {
       return { level: "ok", text: "Starlink sync · stratum " + stratum };
@@ -219,6 +240,9 @@
     }
     if (isUsbGps) {
       return { level: "warn", text: "USB GPS source selected but data stale · stratum " + stratum };
+    }
+    if (isNmeaTcp) {
+      return { level: "warn", text: "NMEA TCP source selected but data stale · stratum " + stratum };
     }
     return { level: "warn", text: "fallback source · stratum " + stratum + " · " + (refShort || "?") };
   }
@@ -317,6 +341,19 @@
     wireAuthButton();
   }
 
+  // Rows shared by every NMEA time source card (USB GPS, NMEA TCP).
+  function gnssRows(src) {
+    var ago = src.seconds_since_last_sample;
+    var comp = src.offset_compensation_seconds;
+    return row("Last fix", ago == null ? "never" : formatAgo(ago), src.is_stale ? "err" : "") +
+      row("Last value", src.last_datetime_value) +
+      row("Sentences rx", src.sentences_received != null ? src.sentences_received.toLocaleString() : "—") +
+      row("Last sentence", (src.recent_sentences || []).slice(-1)[0]) +
+      row("Samples sent", src.samples_sent != null ? src.samples_sent.toLocaleString() : "—") +
+      row("Offset comp.", comp ? (comp * 1000).toFixed(0) + "ms" : "none") +
+      (src.last_error ? row("Error", src.last_error, "err") : "");
+  }
+
   function renderUsbGps(data) {
     var usb = data.usb_gps || {};
     $("usb-card").style.display = usb.enabled ? "" : "none";
@@ -324,9 +361,6 @@
 
     var baud = usb.baud ? String(usb.baud) : (usb.configured_baud === "auto" ? "detecting…" : String(usb.configured_baud));
     var fix = !usb.connected ? "—" : (usb.has_fix ? "yes" : "no fix");
-    var ago = usb.seconds_since_last_sample;
-    var agoText = ago == null ? "never" : formatAgo(ago);
-    var comp = usb.offset_compensation_seconds;
 
     $("usb-rows").innerHTML =
       row("Connection", usb.connected ? "receiving NMEA" : "disconnected", usb.connected ? "" : "err") +
@@ -334,11 +368,22 @@
       row("Baud", baud) +
       row("Fix", fix, usb.connected && !usb.has_fix ? "err" : "") +
       row("Satellites", usb.satellites) +
-      row("Last fix", agoText, usb.is_stale ? "err" : "") +
-      row("Last value", usb.last_datetime_value) +
-      row("Samples sent", usb.samples_sent != null ? usb.samples_sent.toLocaleString() : "—") +
-      row("Offset comp.", comp ? (comp * 1000).toFixed(0) + "ms" : "none") +
-      (usb.last_error ? row("Error", usb.last_error, "err") : "");
+      gnssRows(usb);
+  }
+
+  function renderNmeaTcp(data) {
+    var t = data.nmea_tcp || {};
+    $("tcp-card").style.display = t.enabled ? "" : "none";
+    if (!t.enabled) return;
+
+    var fix = !t.connected ? "—" : (t.has_fix ? "yes" : (t.sentences_received ? "no fix" : "waiting for RMC…"));
+
+    $("tcp-rows").innerHTML =
+      row("Connection", t.connected ? "connected" : "disconnected", t.connected ? "" : "err") +
+      row("Server", t.host + ":" + t.port) +
+      row("Fix", fix, t.connected && !t.has_fix ? "err" : "") +
+      row("Satellites", t.satellites) +
+      gnssRows(t);
   }
 
   function renderChrony(data) {
@@ -349,13 +394,13 @@
       return;
     }
     host.innerHTML =
-      row("Stratum", tracking["Stratum"]) +
-      row("Reference ID", tracking["Reference ID"]) +
-      row("System time", tracking["System time"]) +
-      row("Last offset", tracking["Last offset"]) +
-      row("RMS offset", tracking["RMS offset"]) +
-      row("Update interval", tracking["Update interval"]) +
-      row("Leap status", tracking["Leap status"]);
+      stat("Stratum", tracking["Stratum"]) +
+      stat("Reference ID", tracking["Reference ID"]) +
+      stat("System time", tracking["System time"]) +
+      stat("Last offset", tracking["Last offset"]) +
+      stat("RMS offset", tracking["RMS offset"]) +
+      stat("Update interval", tracking["Update interval"]) +
+      stat("Leap status", tracking["Leap status"]);
   }
 
   function renderSources(data) {
@@ -374,8 +419,10 @@
         displayName = "Starlink";
       } else if (s.name === "SIGK") {
         displayName = "SignalK";
-      } else if (s.name === "NMEA") {
+      } else if (s.name === "USB") {
         displayName = "USB GPS";
+      } else if (s.name === "NTCP") {
+        displayName = "NMEA 0183 (TCP)";
       }
       return '<tr class="' + (active ? "active" : "") + '">' +
         "<td>" + escapeHtml(s.state) + "</td>" +
@@ -439,6 +486,7 @@
     renderStatusPill(computeStatus(data));
     renderSignalK(data);
     renderUsbGps(data);
+    renderNmeaTcp(data);
     renderChrony(data);
     renderSources(data);
     renderClients(data);

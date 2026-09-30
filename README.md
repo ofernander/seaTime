@@ -1,6 +1,6 @@
 # boat-time
 
-Dockerized NTP server that sources time datum from SignalK, Starlink, or a USB GPS puck
+Dockerized NTP server that sources time datum from SignalK, Starlink, a USB GPS puck, or NMEA 0183 over TCP
 
 
 ![boat-time](assets/screenshots/screenshot.png)
@@ -22,14 +22,16 @@ SignalK server ──WebSocket──┐           boat-time
                             │        ┌──────────────────────────┐
 USB GPS puck ──NMEA/serial──┤        │ Python bridge            │
                             │        │  ├─ subscribes SignalK   │
-Starlink dish ──NTP─────────┼──────► │  ├─ reads USB GPS NMEA   │
- (192.168.100.1)            │        │  ├─ feeds chrony SOCKs   │
-Optional pool ──NTP─────────┘        │  └─ serves web UI :8123  │
-                                     │           │              │
+NMEA 0183 ──TCP─────────────┤        │  ├─ reads USB GPS NMEA   │
+ (gateway, mux...)          │        │  ├─ reads NMEA over TCP  │
+Starlink dish ──NTP─────────┼──────► │  ├─ feeds chrony SOCKs   │
+ (192.168.100.1)            │        │  └─ serves web UI :8123  │
+Optional pool ──NTP─────────┘        │           │              │
                                      │           ▼              │
                                      │    chronyd               │
                                      │     ├─ refclock (SIGK)   │
-                                     │     ├─ refclock (NMEA)   │
+                                     │     ├─ refclock (USB)    │
+                                     │     ├─ refclock (NTCP)   │
                                      │     ├─ server (Starlink) │
                                      │     ├─ optional pool     │
                                      │     └─ serves UDP/123    │
@@ -53,7 +55,7 @@ git clone https://github.com/ofernander/boat-time.git
 cd boat-time
 cp .env.example .env
 # edit .env — at minimum set NTP_ALLOW_SUBNETS and one time source
-# (SIGNALK_URL, USB_GPS_DEVICE, or STARLINK_NTP_IP)
+# (SIGNALK_URL, USB_GPS_DEVICE, NMEA_TCP_HOST, or STARLINK_NTP_IP)
 docker compose up -d
 docker compose logs -f
 ```
@@ -85,7 +87,7 @@ looking up the host's LAN IP.
 Any USB GPS receiver that speaks NMEA 0183 works — u-blox 7/8 pucks
 (VK-162, VK-172, GT-U7), GlobalSat BU-353, and similar. The bridge reads
 `RMC` sentences, and for each valid fix it sends that fix's UTC time to chrony
-as the `NMEA` refclock.
+as the `USB` refclock.
 
 1. Plug the puck into the Docker host and find its stable path:
 
@@ -120,6 +122,31 @@ Starlink.
 and replugged. Docker's `devices:` mapping is fixed when the container is
 created, so if the host enumerates the puck as a different node after
 replugging, restart the container.
+
+## NMEA 0183 over TCP
+
+Many marine devices serve NMEA 0183 sentences on a TCP port: NMEA 2000 /
+0183 Ethernet and WiFi gateways (Yacht Devices, Actisense, Digital Yacht,
+Quark-elec...), multiplexers, and SignalK's own NMEA 0183 server. If one of
+them carries sentences from your installed GPS, boat-time can take time from
+it directly, with no SignalK WebSocket hop and no separate USB puck.
+
+1. On the device, enable a **TCP** server that outputs NMEA 0183 and note
+   its port.
+2. Set `NMEA_TCP_HOST` and `NMEA_TCP_PORT` in `.env` and `docker compose up -d`.
+
+The bridge connects as a TCP client and reads `RMC` sentences for time and
+`GGA` for the satellite count, from any talker. Everything else on the
+stream (depth, wind, AIS...) is ignored. It reconnects automatically if the
+connection drops or goes quiet.
+
+UDP isn't supported. Devices that "serve" UDP usually broadcast it, and
+broadcasts don't reliably reach a container on Docker's bridge network.
+
+**Accuracy.** Time comes from when each sentence arrives, after it has passed
+through the serving device and the network, with no PPS. Calibrate
+`NMEA_TCP_OFFSET` the same way as `USB_GPS_OFFSET` (see above), using the
+NMEA 0183 (TCP) source's **Last sample** offset.
 
 ## SignalK authentication
 
@@ -197,6 +224,9 @@ See `.env.example` for the full annotated list. The essentials:
 | `USB_GPS_DEVICE` | (blank) | Path inside the container to a USB GPS puck, e.g. `/dev/gps0`. Blank = disabled |
 | `USB_GPS_BAUD` | (auto) | Serial baud rate. Blank = auto-detect (9600, 4800, 38400, 115200) |
 | `USB_GPS_OFFSET` | `0` | Seconds of NMEA arrival delay to subtract. See [USB GPS puck](#usb-gps-puck) |
+| `NMEA_TCP_HOST` | (blank) | IP/hostname of a device serving NMEA 0183 over TCP. Blank = disabled |
+| `NMEA_TCP_PORT` | (blank) | Its TCP port. Required with `NMEA_TCP_HOST` |
+| `NMEA_TCP_OFFSET` | `0` | Seconds of delivery delay to subtract. See [NMEA 0183 over TCP](#nmea-0183-over-tcp) |
 | `STARLINK_NTP_IP` | (blank) | Starlink dish IP (`192.168.100.1`) to use its stratum-1 NTP server |
 | `SET_HOST_CLOCK` | `false` | Let chrony discipline the host clock |
 | `HOST_TZ_FILE` | `/etc/timezone` | Path inside the container to a file with the host's IANA zone. Bind-mounted from the host in `docker-compose.yml` |
@@ -215,6 +245,7 @@ NTP server on their LAN (port 123, typically `192.168.100.1`). Enabled by settin
 
 **USB GPS puck** - Reads NMEA directly from a USB GPS receiver passed through to the container. Enabled by setting `USB_GPS_DEVICE` in `.env`. See [USB GPS puck](#usb-gps-puck).
 
+**NMEA 0183 over TCP** - Reads GPS time from any device serving NMEA 0183 on a TCP port (gateways, multiplexers, SignalK). Enabled by setting `NMEA_TCP_HOST`/`NMEA_TCP_PORT` in `.env`. See [NMEA 0183 over TCP](#nmea-0183-over-tcp).
 
 **NEMA2K via CAN adapter in the works**
 
@@ -240,6 +271,10 @@ NTP server on their LAN (port 123, typically `192.168.100.1`). Enabled by settin
     "enabled": true, "device": "/dev/gps0", "baud": 9600, "connected": true,
     "has_fix": true, "satellites": 9, "last_datetime_value": "...",
     "is_stale": false, "samples_sent": 567, "last_error": null
+  },
+  "nmea_tcp": {
+    "enabled": true, "host": "192.168.88.10", "port": 10110,
+    "connected": true, "has_fix": true, "satellites": 11, ...
   },
   "chrony": {
     "tracking": { ... }, "sources": [...], "clients": [...]
@@ -267,6 +302,11 @@ to a source yet. Wait 1–2 minutes after container start while reach climbs.
 through (`docker exec boat-time ls -l /dev/gps0`) and that nothing on the host
 is holding it open. `gpsd` and `ModemManager` both like to grab USB serial
 devices: `sudo systemctl disable --now gpsd.socket gpsd ModemManager`.
+
+**NMEA 0183 (TCP) card shows "connected" but "waiting for RMC…":** the
+server is up but isn't sending `RMC` sentences. Check that the device outputs
+NMEA 0183 (not a proprietary or NMEA 2000 raw format) on that port, and that
+any output filters on it let `RMC` through.
 
 **USB GPS reports "implausible date (GPS week rollover?)":** older pucks with
 SiRF III chipsets report dates ~19.6 years in the past since the 2019 GPS

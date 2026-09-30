@@ -25,7 +25,7 @@
 # --- Refclock: USB GPS puck via SOCK (optional) ------------------------------
 # Rendered only when USB_GPS_DEVICE is set. The bridge reads NMEA RMC
 # sentences from the puck and feeds one sample per fix.
-# refid NMEA: identifies this as the USB serial GPS feed.
+# refid USB: identifies this as the USB serial GPS feed.
 # precision 0.1: 100ms. NMEA sentence timing without PPS is good to a few
 #   tens of ms once USB_GPS_OFFSET is calibrated, worse before. Honest error
 #   bars keep it from being flagged a falseticker against Starlink.
@@ -33,6 +33,18 @@
 # filter 16 / poll 4 / dpoll 0: 1Hz samples, one median-filtered sample
 #   every 16s.
 @REFCLOCK_USB@
+
+# --- Refclock: NMEA 0183 over TCP via SOCK (optional) ------------------------
+# Rendered only when NMEA_TCP_HOST is set. The bridge reads RMC sentences
+# from a TCP NMEA 0183 server (gateway, multiplexer, etc.) and feeds one
+# sample per fix.
+# refid NTCP: identifies this as the NMEA-over-TCP feed.
+# precision 0.1 / delay 0.2: same honest error bars as the USB GPS. Delivery
+#   goes through the serving device and the network, with no PPS; tighten
+#   once NMEA_TCP_OFFSET is calibrated and the jitter is known.
+# filter 16 / poll 4 / dpoll 0: 1Hz samples, one median-filtered sample
+#   every 16s.
+@REFCLOCK_NMEA_TCP@
 
 # --- Starlink NTP source (optional) ------------------------------------------
 # Rendered only when STARLINK_NTP_IP is set. Starlink dishes run a stratum 1

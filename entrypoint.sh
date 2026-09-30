@@ -41,9 +41,19 @@ else
 fi
 
 if [ -n "${USB_GPS_DEVICE:-}" ]; then
-    REFCLOCK_USB="refclock SOCK /var/run/chrony.usbgps.sock refid NMEA precision 0.1 delay 0.2 filter 16 poll 4 dpoll 0"
+    REFCLOCK_USB="refclock SOCK /var/run/chrony.usbgps.sock refid USB precision 0.1 delay 0.2 filter 16 poll 4 dpoll 0"
 else
     REFCLOCK_USB="# (USB GPS source not configured; set USB_GPS_DEVICE to enable)"
+fi
+
+if [ -n "${NMEA_TCP_HOST:-}" ]; then
+    if [ -z "${NMEA_TCP_PORT:-}" ]; then
+        echo "ERROR: NMEA_TCP_HOST is set but NMEA_TCP_PORT is not" >&2
+        exit 1
+    fi
+    REFCLOCK_NMEA_TCP="refclock SOCK /var/run/chrony.nmeatcp.sock refid NTCP precision 0.1 delay 0.2 filter 16 poll 4 dpoll 0"
+else
+    REFCLOCK_NMEA_TCP="# (NMEA TCP source not configured; set NMEA_TCP_HOST to enable)"
 fi
 
 if [ -n "${STARLINK_NTP_IP:-}" ]; then
@@ -77,6 +87,7 @@ sed \
     -e "s|@RTCSYNC@|${RTCSYNC}|" \
     -e "s|@REFCLOCK_GPS@|${REFCLOCK_GPS}|" \
     -e "s|@REFCLOCK_USB@|${REFCLOCK_USB}|" \
+    -e "s|@REFCLOCK_NMEA_TCP@|${REFCLOCK_NMEA_TCP}|" \
     -e "s|@STARLINK@|${STARLINK_BLOCK}|" \
     /app/chrony.conf.template > /tmp/chrony.conf.partial
 
@@ -98,6 +109,7 @@ CHRONY_PID=$!
 SOCKS=""
 [ -n "${SIGNALK_URL:-}" ] && SOCKS="$SOCKS /var/run/chrony.gps.sock"
 [ -n "${USB_GPS_DEVICE:-}" ] && SOCKS="$SOCKS /var/run/chrony.usbgps.sock"
+[ -n "${NMEA_TCP_HOST:-}" ] && SOCKS="$SOCKS /var/run/chrony.nmeatcp.sock"
 
 for sock in $SOCKS; do
     for i in 1 2 3 4 5 6 7 8 9 10; do

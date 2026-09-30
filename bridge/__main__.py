@@ -1,6 +1,6 @@
 """Entry point for `python3 -m bridge`.
 
-Initializes logging, starts the USB GPS reader (if configured),
+Initializes logging, starts the USB GPS and NMEA TCP readers (if configured),
 authenticates to SignalK (if configured), starts the HTTP server, and runs
 forever.
 """
@@ -14,6 +14,7 @@ from aiohttp import web
 from bridge.config import (
     SIGNALK_URL, SIGNALK_ENABLED, SIGNALK_PATH, SOCK_PATH, HTTP_PORT, LOG_LEVEL,
     USB_GPS_DEVICE, USB_GPS_SOCK_PATH,
+    NMEA_TCP_HOST, NMEA_TCP_PORT, NMEA_TCP_SOCK_PATH,
 )
 from bridge.state import STATE
 from bridge.chrony_sock import ChronySock
@@ -21,6 +22,7 @@ from bridge.signalk_auth import authenticate
 from bridge.signalk_client import run as run_signalk
 from bridge.http_server import build_app
 from bridge.usb_gps import UsbGps
+from bridge.nmea_tcp import NmeaTcp
 
 
 logging.basicConfig(
@@ -35,13 +37,19 @@ async def main():
     log.info("boat-time bridge starting")
     log.info("HTTP port:    %d", HTTP_PORT)
 
-    # USB GPS runs in its own thread; start it first so it isn't held up by
-    # the (possibly minutes-long) SignalK auth below.
+    # USB GPS and NMEA TCP run in their own threads; start them first so they
+    # aren't held up by the (possibly minutes-long) SignalK auth below.
     if USB_GPS_DEVICE:
         log.info("USB GPS:      %s -> %s", USB_GPS_DEVICE, USB_GPS_SOCK_PATH)
         UsbGps(ChronySock(USB_GPS_SOCK_PATH)).start()
     else:
         log.info("USB GPS:      disabled (USB_GPS_DEVICE is blank)")
+
+    if NMEA_TCP_HOST:
+        log.info("NMEA TCP:     %s:%d -> %s", NMEA_TCP_HOST, NMEA_TCP_PORT, NMEA_TCP_SOCK_PATH)
+        NmeaTcp(ChronySock(NMEA_TCP_SOCK_PATH)).start()
+    else:
+        log.info("NMEA TCP:     disabled (NMEA_TCP_HOST is blank)")
 
     token = None
     if SIGNALK_ENABLED:

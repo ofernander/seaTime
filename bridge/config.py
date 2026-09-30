@@ -23,8 +23,15 @@ USB_GPS_BAUD = int(os.environ.get("USB_GPS_BAUD", "").strip() or 0)
 # Seconds between the top of the second and the RMC sentence for it arriving.
 USB_GPS_OFFSET = float(os.environ.get("USB_GPS_OFFSET", "").strip() or 0.0)
 
+# NMEA 0183 over TCP (optional). Empty host = disabled.
+NMEA_TCP_HOST = os.environ.get("NMEA_TCP_HOST", "").strip()
+NMEA_TCP_PORT = int(os.environ.get("NMEA_TCP_PORT", "").strip() or 0)
+# Seconds between the top of the second and the RMC sentence for it arriving.
+NMEA_TCP_OFFSET = float(os.environ.get("NMEA_TCP_OFFSET", "").strip() or 0.0)
+
 SOCK_PATH = "/var/run/chrony.gps.sock"
 USB_GPS_SOCK_PATH = "/var/run/chrony.usbgps.sock"
+NMEA_TCP_SOCK_PATH = "/var/run/chrony.nmeatcp.sock"
 HTTP_PORT = 8123
 
 DATA_DIR = Path("/data")
