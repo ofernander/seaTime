@@ -6,6 +6,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         python3-websockets \
         python3-requests \
         python3-aiohttp \
+        python3-serial \
         tini \
         wget \
         ca-certificates \

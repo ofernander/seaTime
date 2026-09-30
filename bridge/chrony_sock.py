@@ -19,8 +19,6 @@ import socket
 import struct
 from typing import Optional
 
-from bridge.state import STATE
-
 
 log = logging.getLogger(__name__)
 
@@ -41,8 +39,8 @@ class ChronySock:
             s.connect(self.path)
             self._sock = s
 
-    def send_sample(self, system_time: float, true_time: float, leap: int = 0):
-        """Send one sample to chrony.
+    def send_sample(self, system_time: float, true_time: float, leap: int = 0) -> float:
+        """Send one sample to chrony. Returns the offset sent.
 
         system_time: time.time() at the moment we observed the truth.
         true_time:   GPS-derived UTC seconds since epoch.
@@ -71,5 +69,4 @@ class ChronySock:
                 pass
             self._sock = None
             raise
-        STATE.samples_sent += 1
-        STATE.last_sample_offset = offset
+        return offset

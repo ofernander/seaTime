@@ -5,7 +5,9 @@ import os
 from pathlib import Path
 
 
-SIGNALK_URL = os.environ.get("SIGNALK_URL", "http://CHANGE_ME:3000").rstrip("/")
+# SignalK source (optional). Empty string = disabled.
+SIGNALK_URL = os.environ.get("SIGNALK_URL", "").strip().rstrip("/")
+SIGNALK_ENABLED = bool(SIGNALK_URL)
 SIGNALK_PATH = os.environ.get("SIGNALK_PATH", "navigation.datetime")
 SIGNALK_USERNAME = os.environ.get("SIGNALK_USERNAME", "").strip()
 SIGNALK_PASSWORD = os.environ.get("SIGNALK_PASSWORD", "").strip()
@@ -14,7 +16,15 @@ SIGNALK_REQUEST_ACCESS = os.environ.get("SIGNALK_REQUEST_ACCESS", "").lower() ==
 # Starlink NTP source (optional). Empty string = disabled.
 STARLINK_NTP_IP = os.environ.get("STARLINK_NTP_IP", "").strip()
 
+# USB GPS puck (optional). Empty string = disabled.
+USB_GPS_DEVICE = os.environ.get("USB_GPS_DEVICE", "").strip()
+# 0 = auto-detect.
+USB_GPS_BAUD = int(os.environ.get("USB_GPS_BAUD", "").strip() or 0)
+# Seconds between the top of the second and the RMC sentence for it arriving.
+USB_GPS_OFFSET = float(os.environ.get("USB_GPS_OFFSET", "").strip() or 0.0)
+
 SOCK_PATH = "/var/run/chrony.gps.sock"
+USB_GPS_SOCK_PATH = "/var/run/chrony.usbgps.sock"
 HTTP_PORT = 8123
 
 DATA_DIR = Path("/data")

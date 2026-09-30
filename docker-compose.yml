@@ -11,6 +11,11 @@ services:
       - "8123:8123/tcp"
     cap_add:
       - SYS_TIME
+    # USB GPS puck (optional): pass the device through and set
+    # USB_GPS_DEVICE=/dev/gps0 in .env. Use the stable /dev/serial/by-id/
+    # path on the host side — ttyACM0/ttyUSB0 numbering can change on replug.
+    # devices:
+    #   - /dev/serial/by-id/usb-u-blox_AG_-_www.u-blox.com_u-blox_7_-_GPS_GNSS_Receiver-if00:/dev/gps0
     volumes:
       - ./data:/data
       # Bind-mount the host timezone so the web UI reflects actual host time.

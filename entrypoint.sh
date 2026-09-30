@@ -34,7 +34,17 @@ fi
 # if a source disagrees with the majority beyond its error bounds, chrony
 # correctly marks it a falseticker. With three sources (SIGK + Starlink +
 # pool), the majority vote handles this cleanly.
-REFCLOCK_GPS="refclock SOCK /var/run/chrony.gps.sock refid SIGK precision 0.3 delay 0.1 filter 32 poll 3 dpoll -1"
+if [ -n "${SIGNALK_URL:-}" ]; then
+    REFCLOCK_GPS="refclock SOCK /var/run/chrony.gps.sock refid SIGK precision 0.3 delay 0.1 filter 32 poll 3 dpoll -1"
+else
+    REFCLOCK_GPS="# (SignalK source not configured; set SIGNALK_URL to enable)"
+fi
+
+if [ -n "${USB_GPS_DEVICE:-}" ]; then
+    REFCLOCK_USB="refclock SOCK /var/run/chrony.usbgps.sock refid NMEA precision 0.1 delay 0.2 filter 16 poll 4 dpoll 0"
+else
+    REFCLOCK_USB="# (USB GPS source not configured; set USB_GPS_DEVICE to enable)"
+fi
 
 if [ -n "${STARLINK_NTP_IP:-}" ]; then
     STARLINK_BLOCK="server ${STARLINK_NTP_IP} iburst minpoll 4 maxpoll 6"
@@ -66,6 +76,7 @@ sed \
     -e "s|@MAKESTEP@|${MAKESTEP}|" \
     -e "s|@RTCSYNC@|${RTCSYNC}|" \
     -e "s|@REFCLOCK_GPS@|${REFCLOCK_GPS}|" \
+    -e "s|@REFCLOCK_USB@|${REFCLOCK_USB}|" \
     -e "s|@STARLINK@|${STARLINK_BLOCK}|" \
     /app/chrony.conf.template > /tmp/chrony.conf.partial
 
@@ -83,17 +94,23 @@ echo "=========================================="
 chronyd -d -f /etc/chrony/chrony.conf &
 CHRONY_PID=$!
 
-# Wait for chronyd to create the SOCK file (needed by the bridge).
-for i in 1 2 3 4 5 6 7 8 9 10; do
-    [ -S /var/run/chrony.gps.sock ] && break
-    sleep 0.5
-done
+# Wait for chronyd to create the SOCK files the bridge feeds.
+SOCKS=""
+[ -n "${SIGNALK_URL:-}" ] && SOCKS="$SOCKS /var/run/chrony.gps.sock"
+[ -n "${USB_GPS_DEVICE:-}" ] && SOCKS="$SOCKS /var/run/chrony.usbgps.sock"
 
-if [ ! -S /var/run/chrony.gps.sock ]; then
-    echo "ERROR: chrony did not create /var/run/chrony.gps.sock" >&2
-    kill $CHRONY_PID 2>/dev/null || true
-    exit 1
-fi
+for sock in $SOCKS; do
+    for i in 1 2 3 4 5 6 7 8 9 10; do
+        [ -S "$sock" ] && break
+        sleep 0.5
+    done
+
+    if [ ! -S "$sock" ]; then
+        echo "ERROR: chrony did not create $sock" >&2
+        kill $CHRONY_PID 2>/dev/null || true
+        exit 1
+    fi
+done
 
 # ---- Launch bridge ----------------------------------------------------------
 

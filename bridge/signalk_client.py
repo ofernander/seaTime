@@ -82,9 +82,11 @@ def _handle_message(raw: str, chrony: ChronySock):
                 log.debug("Bad datetime %r: %s", datetime_str, e)
                 continue
             try:
-                chrony.send_sample(system_time, true_time)
+                offset = chrony.send_sample(system_time, true_time)
             except OSError:
                 return  # ChronySock logged; retry on next delta.
+            STATE.samples_sent += 1
+            STATE.last_sample_offset = offset
             STATE.last_delta_at = system_time
             STATE.last_datetime_value = datetime_str
 

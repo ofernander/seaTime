@@ -4,7 +4,7 @@ import logging
 
 from aiohttp import web
 
-from bridge.config import STATIC_DIR
+from bridge.config import STATIC_DIR, SIGNALK_ENABLED
 from bridge.state import STATE
 from bridge import chronyc, ntp_query
 from bridge.signalk_auth import start_access_request
@@ -35,6 +35,11 @@ async def handle_status(request: web.Request) -> web.Response:
 
 
 async def handle_request_access(request: web.Request) -> web.Response:
+    if not SIGNALK_ENABLED:
+        return web.json_response(
+            {"ok": False, "state": "error", "error": "SignalK is disabled"},
+            status=409,
+        )
     result = await start_access_request()
     status = 202 if result.get("ok") else 409
     return web.json_response(result, status=status)

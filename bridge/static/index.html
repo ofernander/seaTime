@@ -93,9 +93,13 @@
 </div>
 
 <div class="grid">
-  <div class="card">
+  <div class="card" id="sk-card">
     <h3>SignalK</h3>
     <div id="sk-rows"></div>
+  </div>
+  <div class="card" id="usb-card" style="display: none;">
+    <h3>USB GPS</h3>
+    <div id="usb-rows"></div>
   </div>
   <div class="card">
     <h3>Chrony</h3>
@@ -180,12 +184,13 @@
 
   function computeStatus(data) {
     var sk = data.signalk || {};
+    var usb = data.usb_gps || {};
     var tracking = (data.chrony && data.chrony.tracking) || {};
     var srcCfg = data.sources || {};
     var stratum = parseInt(tracking["Stratum"], 10);
     var refId = tracking["Reference ID"] || "";
 
-    if (sk.auth_mode === "failed") {
+    if (sk.enabled && sk.auth_mode === "failed") {
       return { level: "err", text: "auth failed · " + (sk.last_error || "see SignalK panel") };
     }
     if (!isFinite(stratum) || stratum >= 16) {
@@ -197,16 +202,23 @@
 
     var starlinkIp = srcCfg.starlink_ip || "";
     var isSignalK = refShort === "SIGK";
+    var isUsbGps = refShort === "NMEA";
     var isStarlink = starlinkIp && (refShort === starlinkIp || refShort.indexOf(starlinkIp) !== -1);
 
     if (isSignalK && sk.connected && !sk.is_stale) {
       return { level: "ok", text: "SignalK sync · stratum " + stratum };
+    }
+    if (isUsbGps && usb.connected && !usb.is_stale) {
+      return { level: "ok", text: "USB GPS sync · stratum " + stratum };
     }
     if (isStarlink) {
       return { level: "ok", text: "Starlink sync · stratum " + stratum };
     }
     if (isSignalK) {
       return { level: "warn", text: "SignalK source selected but data stale · stratum " + stratum };
+    }
+    if (isUsbGps) {
+      return { level: "warn", text: "USB GPS source selected but data stale · stratum " + stratum };
     }
     return { level: "warn", text: "fallback source · stratum " + stratum + " · " + (refShort || "?") };
   }
@@ -275,7 +287,8 @@
     var sk = data.signalk || {};
     var cs = data.chrony_socket || {};
     var host = $("sk-rows");
-    if (!sk) { host.innerHTML = '<div class="empty">no data</div>'; return; }
+    $("sk-card").style.display = sk.enabled === false ? "none" : "";
+    if (sk.enabled === false) return;
 
     if (sk.auth_mode === "failed") {
       host.innerHTML =
@@ -302,6 +315,30 @@
       row("Samples sent", cs.samples_sent != null ? cs.samples_sent.toLocaleString() : "—") +
       renderAuthBlock(sk);
     wireAuthButton();
+  }
+
+  function renderUsbGps(data) {
+    var usb = data.usb_gps || {};
+    $("usb-card").style.display = usb.enabled ? "" : "none";
+    if (!usb.enabled) return;
+
+    var baud = usb.baud ? String(usb.baud) : (usb.configured_baud === "auto" ? "detecting…" : String(usb.configured_baud));
+    var fix = !usb.connected ? "—" : (usb.has_fix ? "yes" : "no fix");
+    var ago = usb.seconds_since_last_sample;
+    var agoText = ago == null ? "never" : formatAgo(ago);
+    var comp = usb.offset_compensation_seconds;
+
+    $("usb-rows").innerHTML =
+      row("Connection", usb.connected ? "receiving NMEA" : "disconnected", usb.connected ? "" : "err") +
+      row("Device", usb.device) +
+      row("Baud", baud) +
+      row("Fix", fix, usb.connected && !usb.has_fix ? "err" : "") +
+      row("Satellites", usb.satellites) +
+      row("Last fix", agoText, usb.is_stale ? "err" : "") +
+      row("Last value", usb.last_datetime_value) +
+      row("Samples sent", usb.samples_sent != null ? usb.samples_sent.toLocaleString() : "—") +
+      row("Offset comp.", comp ? (comp * 1000).toFixed(0) + "ms" : "none") +
+      (usb.last_error ? row("Error", usb.last_error, "err") : "");
   }
 
   function renderChrony(data) {
@@ -337,6 +374,8 @@
         displayName = "Starlink";
       } else if (s.name === "SIGK") {
         displayName = "SignalK";
+      } else if (s.name === "NMEA") {
+        displayName = "USB GPS";
       }
       return '<tr class="' + (active ? "active" : "") + '">' +
         "<td>" + escapeHtml(s.state) + "</td>" +
@@ -399,6 +438,7 @@
 
     renderStatusPill(computeStatus(data));
     renderSignalK(data);
+    renderUsbGps(data);
     renderChrony(data);
     renderSources(data);
     renderClients(data);
