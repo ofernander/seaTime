@@ -46,6 +46,17 @@
 #   every 16s.
 @REFCLOCK_NMEA_TCP@
 
+# --- Refclock: NMEA 2000 over SocketCAN via SOCK (optional) ------------------
+# Rendered only when N2K_CAN_INTERFACE is set. The bridge reads PGN 126992
+# System Time from the GPS directly off the CAN bus, kernel-timestamped.
+# refid NCAN: identifies this as the NMEA 2000 CAN feed.
+# precision 0.1 / delay 0.2: same starting error bars as the NMEA sources.
+#   No PPS, but no gateway or network either; expect this to be tightened
+#   once N2K_CAN_OFFSET is calibrated and real jitter is measured.
+# filter 16 / poll 4 / dpoll 0: 1Hz samples, one median-filtered sample
+#   every 16s.
+@REFCLOCK_N2K_CAN@
+
 # --- Starlink NTP source (optional) ------------------------------------------
 # Rendered only when STARLINK_NTP_IP is set. Starlink dishes run a stratum 1
 # NTP server serving GPS time on their LAN (usually 192.168.100.1).

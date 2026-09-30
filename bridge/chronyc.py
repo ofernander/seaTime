@@ -121,6 +121,22 @@ def _parse_clients(text: str) -> list[dict]:
     return rows
 
 
+def _parse_ntpdata(text: str) -> dict[str, dict]:
+    """`chronyc -n ntpdata` -> {server_ip: {label: value}}.
+
+    With no address argument chronyc reports every NTP source, one
+    blank-line-separated block each, starting with
+    `Remote address  : 192.168.100.1 (C0A86401)`.
+    """
+    out = {}
+    for block in text.split("\n\n"):
+        fields = _parse_tracking(block)
+        remote = fields.get("Remote address", "").split()
+        if remote:
+            out[remote[0]] = fields
+    return out
+
+
 def snapshot() -> dict:
     """Combined chronyc output. Cached 1s to protect chronyd."""
     now = time.time()
@@ -129,6 +145,7 @@ def snapshot() -> dict:
     data = {
         "tracking": _parse_tracking(_run_chronyc("tracking")),
         "sources": _parse_sources(_run_chronyc("sources", "-v")),
+        "ntpdata": _parse_ntpdata(_run_chronyc("ntpdata")),
         "clients": _parse_clients(_run_chronyc("clients")),
     }
     _CACHE["at"] = now

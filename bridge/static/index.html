@@ -41,7 +41,8 @@
   .status-pill.err { background: var(--err-bg); color: var(--err); }
   .status-pill .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
 
-  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; margin-bottom: 12px; }
+  .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 12px; }
+  @media (max-width: 700px) { .grid { grid-template-columns: minmax(0, 1fr); } }
   .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 1rem 1.25rem; }
   .card h3 { font-size: 12px; font-weight: 500; color: var(--text-dim); margin: 0 0 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; }
 
@@ -121,6 +122,18 @@
   <div class="card" id="tcp-card" style="display: none;">
     <h3>NMEA 0183 (TCP)</h3>
     <div id="tcp-rows"></div>
+  </div>
+  <div class="card" id="can-card" style="display: none;">
+    <h3>NMEA 2000 (CAN)</h3>
+    <div id="can-rows"></div>
+  </div>
+  <div class="card" id="starlink-card" style="display: none;">
+    <h3>Starlink</h3>
+    <div id="starlink-rows"></div>
+  </div>
+  <div class="card" id="pool-card" style="display: none;">
+    <h3>NTP pool</h3>
+    <div id="pool-rows"></div>
   </div>
 </div>
 
@@ -202,6 +215,7 @@
     var sk = data.signalk || {};
     var usb = data.usb_gps || {};
     var tcp = data.nmea_tcp || {};
+    var can = data.n2k_can || {};
     var tracking = (data.chrony && data.chrony.tracking) || {};
     var srcCfg = data.sources || {};
     var stratum = parseInt(tracking["Stratum"], 10);
@@ -221,6 +235,7 @@
     var isSignalK = refShort === "SIGK";
     var isUsbGps = refShort === "USB";
     var isNmeaTcp = refShort === "NTCP";
+    var isN2kCan = refShort === "NCAN";
     var isStarlink = starlinkIp && (refShort === starlinkIp || refShort.indexOf(starlinkIp) !== -1);
 
     if (isSignalK && sk.connected && !sk.is_stale) {
@@ -231,6 +246,9 @@
     }
     if (isNmeaTcp && tcp.connected && !tcp.is_stale) {
       return { level: "ok", text: "NMEA TCP sync · stratum " + stratum };
+    }
+    if (isN2kCan && can.connected && !can.is_stale) {
+      return { level: "ok", text: "NMEA 2000 CAN sync · stratum " + stratum };
     }
     if (isStarlink) {
       return { level: "ok", text: "Starlink sync · stratum " + stratum };
@@ -243,6 +261,9 @@
     }
     if (isNmeaTcp) {
       return { level: "warn", text: "NMEA TCP source selected but data stale · stratum " + stratum };
+    }
+    if (isN2kCan) {
+      return { level: "warn", text: "NMEA 2000 CAN source selected but data stale · stratum " + stratum };
     }
     return { level: "warn", text: "fallback source · stratum " + stratum + " · " + (refShort || "?") };
   }
@@ -341,14 +362,16 @@
     wireAuthButton();
   }
 
-  // Rows shared by every NMEA time source card (USB GPS, NMEA TCP).
-  function gnssRows(src) {
+  // Rows shared by every NMEA time source card (USB GPS, NMEA TCP, N2K CAN).
+  // `unit` names what the source receives: "Sentences" or "Frames".
+  function gnssRows(src, unit) {
+    unit = unit || "Sentences";
     var ago = src.seconds_since_last_sample;
     var comp = src.offset_compensation_seconds;
     return row("Last fix", ago == null ? "never" : formatAgo(ago), src.is_stale ? "err" : "") +
       row("Last value", src.last_datetime_value) +
-      row("Sentences rx", src.sentences_received != null ? src.sentences_received.toLocaleString() : "—") +
-      row("Last sentence", (src.recent_sentences || []).slice(-1)[0]) +
+      row(unit + " rx", src.sentences_received != null ? src.sentences_received.toLocaleString() : "—") +
+      row("Last " + unit.toLowerCase().replace(/s$/, ""), (src.recent_sentences || []).slice(-1)[0]) +
       row("Samples sent", src.samples_sent != null ? src.samples_sent.toLocaleString() : "—") +
       row("Offset comp.", comp ? (comp * 1000).toFixed(0) + "ms" : "none") +
       (src.last_error ? row("Error", src.last_error, "err") : "");
@@ -384,6 +407,113 @@
       row("Fix", fix, t.connected && !t.has_fix ? "err" : "") +
       row("Satellites", t.satellites) +
       gnssRows(t);
+  }
+
+  function renderN2kCan(data) {
+    var c = data.n2k_can || {};
+    $("can-card").style.display = c.enabled ? "" : "none";
+    if (!c.enabled) return;
+
+    var gps = c.gps_address == null ? "—" : c.gps_address + (c.time_source ? " (" + c.time_source + ")" : "");
+    if (c.source_filter != null) gps += " · filter " + c.source_filter;
+    var fix = !c.connected ? "—" : (c.has_fix ? "yes" : (c.sentences_received ? "no fix" : "waiting for PGN 126992…"));
+
+    $("can-rows").innerHTML =
+      row("Connection", c.connected ? "listening" : "interface down", c.connected ? "" : "err") +
+      row("Interface", c.interface) +
+      row("GPS address", gps) +
+      row("Fix", fix, c.connected && !c.has_fix ? "err" : "") +
+      gnssRows(c, "Frames");
+  }
+
+  // ---- NTP server sources (Starlink, pool), read from chrony ----
+
+  // Second character of chronyc's MS column.
+  var SOURCE_STATES = {
+    "*": "selected", "+": "combined", "-": "not combined",
+    "?": "unusable", "x": "falseticker", "~": "too variable"
+  };
+
+  function sourceState(src) {
+    var s = SOURCE_STATES[(src.state || "").charAt(1)];
+    return s || (src.state || "—");
+  }
+
+  // Reach is an 8-bit register of the last 8 polls.
+  function reachText(reach) {
+    var n = 0;
+    for (var i = 0; i < 8; i++) if (reach & (1 << i)) n++;
+    return n ? "reachable (" + n + "/8 polls)" : "unreachable";
+  }
+
+  // "+9652ns[ +11us] +/- 2930us" -> "+9652ns ± 2930us"
+  function offsetText(sample) {
+    var m = /^(\S+?)\[.*\]\s*\+\/-\s*(\S+)$/.exec(sample || "");
+    return m ? m[1] + " ± " + m[2] : (sample || "—");
+  }
+
+  // chronyc LastRx: seconds, or a number with an m/h/d/y suffix, or "-".
+  function lastRxText(v) {
+    if (!v || v === "-") return "never";
+    return /^\d+$/.test(v) ? v + "s ago" : v + " ago";
+  }
+
+  // "47505300 (GPS)" -> "GPS"
+  function refName(refId) {
+    var m = /\(([^)]+)\)/.exec(refId || "");
+    return m ? m[1] : (refId || null);
+  }
+
+  function secondsToMs(v) {
+    var n = parseFloat(v);
+    return isFinite(n) ? (n * 1000).toFixed(2) + " ms" : null;
+  }
+
+  function renderStarlink(data) {
+    var ip = (data.sources || {}).starlink_ip;
+    $("starlink-card").style.display = ip ? "" : "none";
+    if (!ip) return;
+
+    var chrony = data.chrony || {};
+    var src = (chrony.sources || []).filter(function (s) { return s.name === ip; })[0];
+    var nd = (chrony.ntpdata || {})[ip] || {};
+    if (!src) {
+      $("starlink-rows").innerHTML =
+        row("Connection", "not in chrony sources", "err") + row("Server", ip);
+      return;
+    }
+    var state = sourceState(src);
+    var bad = state === "unusable" || state === "falseticker" || state === "too variable";
+
+    $("starlink-rows").innerHTML =
+      row("Connection", reachText(src.reach), src.reach ? "" : "err") +
+      row("Server", ip) +
+      row("State", state, bad ? "err" : "") +
+      row("Stratum", src.stratum) +
+      row("Reference", refName(nd["Reference ID"])) +
+      row("Last rx", lastRxText(src.last_rx)) +
+      row("Offset", offsetText(src.last_sample)) +
+      row("Round-trip delay", secondsToMs(nd["Peer delay"]));
+  }
+
+  function renderPool(data) {
+    var cfg = data.sources || {};
+    $("pool-card").style.display = cfg.pool ? "" : "none";
+    if (!cfg.pool) return;
+
+    // Pool members are the NTP servers ("^" mode) other than Starlink.
+    var servers = ((data.chrony || {}).sources || []).filter(function (s) {
+      return (s.state || "").charAt(0) === "^" && s.name !== cfg.starlink_ip;
+    });
+    var reachable = servers.filter(function (s) { return s.reach; }).length;
+
+    $("pool-rows").innerHTML =
+      row("Pool", cfg.pool) +
+      row("Connection", servers.length ? reachable + "/" + servers.length + " servers reachable" : "no servers resolved",
+          reachable ? "" : "err") +
+      servers.map(function (s) {
+        return row(s.name, sourceState(s) + " · stratum " + s.stratum + " · " + offsetText(s.last_sample));
+      }).join("");
   }
 
   function renderChrony(data) {
@@ -423,6 +553,8 @@
         displayName = "USB GPS";
       } else if (s.name === "NTCP") {
         displayName = "NMEA 0183 (TCP)";
+      } else if (s.name === "NCAN") {
+        displayName = "NMEA 2000 (CAN)";
       }
       return '<tr class="' + (active ? "active" : "") + '">' +
         "<td>" + escapeHtml(s.state) + "</td>" +
@@ -487,6 +619,9 @@
     renderSignalK(data);
     renderUsbGps(data);
     renderNmeaTcp(data);
+    renderN2kCan(data);
+    renderStarlink(data);
+    renderPool(data);
     renderChrony(data);
     renderSources(data);
     renderClients(data);

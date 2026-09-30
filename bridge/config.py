@@ -16,6 +16,9 @@ SIGNALK_REQUEST_ACCESS = os.environ.get("SIGNALK_REQUEST_ACCESS", "").lower() ==
 # Starlink NTP source (optional). Empty string = disabled.
 STARLINK_NTP_IP = os.environ.get("STARLINK_NTP_IP", "").strip()
 
+# Internet NTP pool (optional). Empty string = disabled.
+NTP_FALLBACK_POOL = os.environ.get("NTP_FALLBACK_POOL", "").strip()
+
 # USB GPS puck (optional). Empty string = disabled.
 USB_GPS_DEVICE = os.environ.get("USB_GPS_DEVICE", "").strip()
 # 0 = auto-detect.
@@ -29,9 +32,18 @@ NMEA_TCP_PORT = int(os.environ.get("NMEA_TCP_PORT", "").strip() or 0)
 # Seconds between the top of the second and the RMC sentence for it arriving.
 NMEA_TCP_OFFSET = float(os.environ.get("NMEA_TCP_OFFSET", "").strip() or 0.0)
 
+# NMEA 2000 over SocketCAN (optional). Empty interface = disabled.
+N2K_CAN_INTERFACE = os.environ.get("N2K_CAN_INTERFACE", "").strip()
+# Seconds between the instant a 126992 message describes and it arriving.
+N2K_CAN_OFFSET = float(os.environ.get("N2K_CAN_OFFSET", "").strip() or 0.0)
+# Only accept time from this bus address (decimal or 0x hex). Blank = any GPS.
+_n2k_can_source = os.environ.get("N2K_CAN_SOURCE", "").strip()
+N2K_CAN_SOURCE = int(_n2k_can_source, 0) if _n2k_can_source else None
+
 SOCK_PATH = "/var/run/chrony.gps.sock"
 USB_GPS_SOCK_PATH = "/var/run/chrony.usbgps.sock"
 NMEA_TCP_SOCK_PATH = "/var/run/chrony.nmeatcp.sock"
+N2K_CAN_SOCK_PATH = "/var/run/chrony.n2kcan.sock"
 HTTP_PORT = 8123
 
 DATA_DIR = Path("/data")

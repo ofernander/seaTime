@@ -1,6 +1,6 @@
 """Entry point for `python3 -m bridge`.
 
-Initializes logging, starts the USB GPS and NMEA TCP readers (if configured),
+Initializes logging, starts the USB GPS, NMEA TCP and NMEA 2000 CAN readers (if configured),
 authenticates to SignalK (if configured), starts the HTTP server, and runs
 forever.
 """
@@ -15,6 +15,7 @@ from bridge.config import (
     SIGNALK_URL, SIGNALK_ENABLED, SIGNALK_PATH, SOCK_PATH, HTTP_PORT, LOG_LEVEL,
     USB_GPS_DEVICE, USB_GPS_SOCK_PATH,
     NMEA_TCP_HOST, NMEA_TCP_PORT, NMEA_TCP_SOCK_PATH,
+    N2K_CAN_INTERFACE, N2K_CAN_SOCK_PATH,
 )
 from bridge.state import STATE
 from bridge.chrony_sock import ChronySock
@@ -23,6 +24,7 @@ from bridge.signalk_client import run as run_signalk
 from bridge.http_server import build_app
 from bridge.usb_gps import UsbGps
 from bridge.nmea_tcp import NmeaTcp
+from bridge.n2k_can import N2kCan
 
 
 logging.basicConfig(
@@ -37,7 +39,7 @@ async def main():
     log.info("boat-time bridge starting")
     log.info("HTTP port:    %d", HTTP_PORT)
 
-    # USB GPS and NMEA TCP run in their own threads; start them first so they
+    # USB GPS, NMEA TCP and N2K CAN run in their own threads; start them first so they
     # aren't held up by the (possibly minutes-long) SignalK auth below.
     if USB_GPS_DEVICE:
         log.info("USB GPS:      %s -> %s", USB_GPS_DEVICE, USB_GPS_SOCK_PATH)
@@ -50,6 +52,12 @@ async def main():
         NmeaTcp(ChronySock(NMEA_TCP_SOCK_PATH)).start()
     else:
         log.info("NMEA TCP:     disabled (NMEA_TCP_HOST is blank)")
+
+    if N2K_CAN_INTERFACE:
+        log.info("N2K CAN:      %s -> %s", N2K_CAN_INTERFACE, N2K_CAN_SOCK_PATH)
+        N2kCan(ChronySock(N2K_CAN_SOCK_PATH)).start()
+    else:
+        log.info("N2K CAN:      disabled (N2K_CAN_INTERFACE is blank)")
 
     token = None
     if SIGNALK_ENABLED:

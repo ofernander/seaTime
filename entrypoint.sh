@@ -56,6 +56,12 @@ else
     REFCLOCK_NMEA_TCP="# (NMEA TCP source not configured; set NMEA_TCP_HOST to enable)"
 fi
 
+if [ -n "${N2K_CAN_INTERFACE:-}" ]; then
+    REFCLOCK_N2K_CAN="refclock SOCK /var/run/chrony.n2kcan.sock refid NCAN precision 0.1 delay 0.2 filter 16 poll 4 dpoll 0"
+else
+    REFCLOCK_N2K_CAN="# (NMEA 2000 CAN source not configured; set N2K_CAN_INTERFACE to enable)"
+fi
+
 if [ -n "${STARLINK_NTP_IP:-}" ]; then
     STARLINK_BLOCK="server ${STARLINK_NTP_IP} iburst minpoll 4 maxpoll 6"
 else
@@ -88,6 +94,7 @@ sed \
     -e "s|@REFCLOCK_GPS@|${REFCLOCK_GPS}|" \
     -e "s|@REFCLOCK_USB@|${REFCLOCK_USB}|" \
     -e "s|@REFCLOCK_NMEA_TCP@|${REFCLOCK_NMEA_TCP}|" \
+    -e "s|@REFCLOCK_N2K_CAN@|${REFCLOCK_N2K_CAN}|" \
     -e "s|@STARLINK@|${STARLINK_BLOCK}|" \
     /app/chrony.conf.template > /tmp/chrony.conf.partial
 
@@ -110,6 +117,7 @@ SOCKS=""
 [ -n "${SIGNALK_URL:-}" ] && SOCKS="$SOCKS /var/run/chrony.gps.sock"
 [ -n "${USB_GPS_DEVICE:-}" ] && SOCKS="$SOCKS /var/run/chrony.usbgps.sock"
 [ -n "${NMEA_TCP_HOST:-}" ] && SOCKS="$SOCKS /var/run/chrony.nmeatcp.sock"
+[ -n "${N2K_CAN_INTERFACE:-}" ] && SOCKS="$SOCKS /var/run/chrony.n2kcan.sock"
 
 for sock in $SOCKS; do
     for i in 1 2 3 4 5 6 7 8 9 10; do

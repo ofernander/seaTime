@@ -1,6 +1,6 @@
 # boat-time
 
-Dockerized NTP server that sources time datum from SignalK, Starlink, a USB GPS puck, or NMEA 0183 over TCP
+Dockerized NTP server that sources time datum from SignalK, Starlink, a USB GPS puck, NMEA 0183 over TCP, or NMEA 2000 over CAN
 
 
 ![boat-time](assets/screenshots/screenshot.png)
@@ -24,14 +24,17 @@ USB GPS puck ──NMEA/serial──┤        │ Python bridge            │
                             │        │  ├─ subscribes SignalK   │
 NMEA 0183 ──TCP─────────────┤        │  ├─ reads USB GPS NMEA   │
  (gateway, mux...)          │        │  ├─ reads NMEA over TCP  │
-Starlink dish ──NTP─────────┼──────► │  ├─ feeds chrony SOCKs   │
- (192.168.100.1)            │        │  └─ serves web UI :8123  │
+NMEA 2000 ──SocketCAN───────┤        │  ├─ reads N2K off can0   │
+ (can0)                     │        │  ├─ feeds chrony SOCKs   │
+Starlink dish ──NTP─────────┼──────► │  └─ serves web UI :8123  │
+ (192.168.100.1)            │        │           │              │
 Optional pool ──NTP─────────┘        │           │              │
                                      │           ▼              │
                                      │    chronyd               │
                                      │     ├─ refclock (SIGK)   │
                                      │     ├─ refclock (USB)    │
                                      │     ├─ refclock (NTCP)   │
+                                     │     ├─ refclock (NCAN)   │
                                      │     ├─ server (Starlink) │
                                      │     ├─ optional pool     │
                                      │     └─ serves UDP/123    │
@@ -55,7 +58,7 @@ git clone https://github.com/ofernander/boat-time.git
 cd boat-time
 cp .env.example .env
 # edit .env — at minimum set NTP_ALLOW_SUBNETS and one time source
-# (SIGNALK_URL, USB_GPS_DEVICE, NMEA_TCP_HOST, or STARLINK_NTP_IP)
+# (SIGNALK_URL, USB_GPS_DEVICE, NMEA_TCP_HOST, N2K_CAN_INTERFACE, or STARLINK_NTP_IP)
 docker compose up -d
 docker compose logs -f
 ```
@@ -148,6 +151,54 @@ through the serving device and the network, with no PPS. Calibrate
 `NMEA_TCP_OFFSET` the same way as `USB_GPS_OFFSET` (see above), using the
 NMEA 0183 (TCP) source's **Last sample** offset.
 
+## NMEA 2000 over CAN
+
+With a SocketCAN adapter (a USB-CAN adapter or CAN hat that shows up on the
+host as `can0`), boat-time reads time straight off the NMEA 2000 bus. It uses
+PGN 126992 (System Time) from your GPS, with no gateway, conversion or network
+in between.
+
+- A kernel filter delivers only PGN 126992 frames to boat-time.
+- Each frame is timestamped by the kernel as it arrives.
+- Only time marked as GPS or GLONASS is used, so a chartplotter echoing its
+  own clock onto the bus is ignored.
+- boat-time never transmits onto the bus.
+- SocketCAN gives every frame to every reader, so SignalK can use the same
+  interface at the same time.
+
+**Requirements**
+
+- **Host networking.** CAN interfaces are network interfaces, so the
+  container only sees `can0` with `network_mode: host`.
+- **The host brings the interface up.** NMEA 2000 runs at 250 kbit/s. With
+  systemd-networkd, which also re-applies it if a USB adapter is replugged,
+  create `/etc/systemd/network/80-can0.network`:
+
+  ```ini
+  [Match]
+  Name=can0
+
+  [CAN]
+  BitRate=250K
+  ```
+
+  Then `sudo systemctl enable --now systemd-networkd`. networkd only manages
+  interfaces matched by a `.network` file, so this doesn't touch your other
+  interfaces. To bring it up by hand instead:
+
+  ```bash
+  sudo ip link set can0 up type can bitrate 250000
+  ```
+
+**Setup:** set `N2K_CAN_INTERFACE=can0` in `.env` and `docker compose up -d`.
+If more than one device on the bus sends GPS time, the card shows which bus
+address is being used, and `N2K_CAN_SOURCE` can pin it to one.
+
+**Accuracy.** There's no PPS, so the GPS's own delay in sending 126992 still
+applies. Calibrate `N2K_CAN_OFFSET` the same way as `USB_GPS_OFFSET` (see
+above). With no gateway or network in the path, expect less jitter than the
+NMEA 0183 sources.
+
 ## SignalK authentication
 
 The bridge supports three ways to authenticate to SignalK. Pick whichever
@@ -227,6 +278,9 @@ See `.env.example` for the full annotated list. The essentials:
 | `NMEA_TCP_HOST` | (blank) | IP/hostname of a device serving NMEA 0183 over TCP. Blank = disabled |
 | `NMEA_TCP_PORT` | (blank) | Its TCP port. Required with `NMEA_TCP_HOST` |
 | `NMEA_TCP_OFFSET` | `0` | Seconds of delivery delay to subtract. See [NMEA 0183 over TCP](#nmea-0183-over-tcp) |
+| `N2K_CAN_INTERFACE` | (blank) | SocketCAN interface carrying NMEA 2000, e.g. `can0`. Needs host networking. Blank = disabled |
+| `N2K_CAN_OFFSET` | `0` | Seconds of GPS send delay to subtract. See [NMEA 2000 over CAN](#nmea-2000-over-can) |
+| `N2K_CAN_SOURCE` | (blank) | Only accept time from this bus address (decimal or `0x` hex). Blank = any GPS |
 | `STARLINK_NTP_IP` | (blank) | Starlink dish IP (`192.168.100.1`) to use its stratum-1 NTP server |
 | `SET_HOST_CLOCK` | `false` | Let chrony discipline the host clock |
 | `HOST_TZ_FILE` | `/etc/timezone` | Path inside the container to a file with the host's IANA zone. Bind-mounted from the host in `docker-compose.yml` |
@@ -246,6 +300,8 @@ NTP server on their LAN (port 123, typically `192.168.100.1`). Enabled by settin
 **USB GPS puck** - Reads NMEA directly from a USB GPS receiver passed through to the container. Enabled by setting `USB_GPS_DEVICE` in `.env`. See [USB GPS puck](#usb-gps-puck).
 
 **NMEA 0183 over TCP** - Reads GPS time from any device serving NMEA 0183 on a TCP port (gateways, multiplexers, SignalK). Enabled by setting `NMEA_TCP_HOST`/`NMEA_TCP_PORT` in `.env`. See [NMEA 0183 over TCP](#nmea-0183-over-tcp).
+
+**NMEA 2000 over CAN** - Reads PGN 126992 System Time from your GPS straight off the bus through a SocketCAN adapter. Enabled by setting `N2K_CAN_INTERFACE` in `.env`. See [NMEA 2000 over CAN](#nmea-2000-over-can).
 
 **NEMA2K via CAN adapter in the works**
 
@@ -276,8 +332,12 @@ NTP server on their LAN (port 123, typically `192.168.100.1`). Enabled by settin
     "enabled": true, "host": "192.168.88.10", "port": 10110,
     "connected": true, "has_fix": true, "satellites": 11, ...
   },
+  "n2k_can": {
+    "enabled": true, "interface": "can0", "source_filter": null,
+    "gps_address": 2, "time_source": "GPS", "connected": true, "has_fix": true, ...
+  },
   "chrony": {
-    "tracking": { ... }, "sources": [...], "clients": [...]
+    "tracking": { ... }, "sources": [...], "ntpdata": { ... }, "clients": [...]
   },
   "uptime_seconds": 42.0
 }
@@ -307,6 +367,18 @@ devices: `sudo systemctl disable --now gpsd.socket gpsd ModemManager`.
 server is up but isn't sending `RMC` sentences. Check that the device outputs
 NMEA 0183 (not a proprietary or NMEA 2000 raw format) on that port, and that
 any output filters on it let `RMC` through.
+
+**NMEA 2000 (CAN) card shows "interface down":** check the host has the
+interface up (`ip -details link show can0` should say `UP` and
+`bitrate 250000`), and that the container uses host networking.
+
+**NMEA 2000 (CAN) card shows "waiting for PGN 126992…":** no GPS time is
+arriving. Watch for it on the host with can-utils:
+`candump can0,01F01000:03FFFF00`. If frames appear but the card still waits,
+check the container log for `ignoring PGN 126992 from address N`: the only
+sender isn't marking its time as GPS/GLONASS. If nothing appears, the GPS
+isn't sending 126992. Some GPS units only send it when enabled in their
+settings or on the MFD.
 
 **USB GPS reports "implausible date (GPS week rollover?)":** older pucks with
 SiRF III chipsets report dates ~19.6 years in the past since the 2019 GPS

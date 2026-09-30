@@ -10,9 +10,10 @@ from typing import Optional
 
 from bridge.config import (
     SIGNALK_URL, SIGNALK_ENABLED, SIGNALK_PATH, SOCK_PATH, STALE_THRESHOLD_SEC,
-    STARLINK_NTP_IP, USB_GPS_DEVICE, USB_GPS_BAUD, USB_GPS_OFFSET,
+    STARLINK_NTP_IP, NTP_FALLBACK_POOL, USB_GPS_DEVICE, USB_GPS_BAUD, USB_GPS_OFFSET,
     USB_GPS_SOCK_PATH, NMEA_TCP_HOST, NMEA_TCP_PORT, NMEA_TCP_OFFSET,
-    NMEA_TCP_SOCK_PATH,
+    NMEA_TCP_SOCK_PATH, N2K_CAN_INTERFACE, N2K_CAN_OFFSET, N2K_CAN_SOURCE,
+    N2K_CAN_SOCK_PATH,
     VERSION, HOMEPAGE,
 )
 
@@ -107,6 +108,10 @@ class State:
     usb_gps_baud: Optional[int] = None
     # NMEA 0183 over TCP
     nmea_tcp: SourceState = field(default_factory=SourceState)
+    # NMEA 2000 over SocketCAN
+    n2k_can: SourceState = field(default_factory=SourceState)
+    n2k_can_gps_address: Optional[int] = None  # bus address of the GNSS sending 126992
+    n2k_can_time_source: Optional[str] = None  # GPS | GLONASS
 
     def snapshot(self) -> dict:
         now = time.time()
@@ -157,8 +162,19 @@ class State:
                 "offset_compensation_seconds": NMEA_TCP_OFFSET,
                 "sock_path": NMEA_TCP_SOCK_PATH,
             },
+            "n2k_can": {
+                "enabled": bool(N2K_CAN_INTERFACE),
+                "interface": N2K_CAN_INTERFACE or None,
+                "source_filter": N2K_CAN_SOURCE,
+                "gps_address": self.n2k_can_gps_address,
+                "time_source": self.n2k_can_time_source,
+                **self.n2k_can.snapshot(now),
+                "offset_compensation_seconds": N2K_CAN_OFFSET,
+                "sock_path": N2K_CAN_SOCK_PATH,
+            },
             "sources": {
                 "starlink_ip": STARLINK_NTP_IP or None,
+                "pool": NTP_FALLBACK_POOL or None,
             },
             "app": {
                 "version": VERSION,
