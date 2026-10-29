@@ -346,9 +346,9 @@ NTP server on their LAN (port 123, typically `192.168.100.1`). Enabled by settin
 ## Troubleshooting
 
 - **Container logs:** `docker compose logs -f`
-- **chrony tracking:** `docker exec seaTime chronyc tracking`
-- **chrony sources:** `docker exec seaTime chronyc sources -v`
-- **LAN clients:** `docker exec seaTime chronyc clients`
+- **chrony tracking:** `docker exec seatime chronyc tracking`
+- **chrony sources:** `docker exec seatime chronyc sources -v`
+- **LAN clients:** `docker exec seatime chronyc clients`
 
 **SignalK source shows `^x` (falseticker):** expected when Starlink or pool
 are reachable — SignalK's WebSocket-delivered time has ~100-200ms systematic
@@ -359,7 +359,7 @@ disagree. SignalK will still be used as a fallback when the others go away.
 to a source yet. Wait 1–2 minutes after container start while reach climbs.
 
 **USB GPS shows "disconnected" / "no NMEA data":** check the device is passed
-through (`docker exec seaTime ls -l /dev/gps0`) and that nothing on the host
+through (`docker exec seatime ls -l /dev/gps0`) and that nothing on the host
 is holding it open. `gpsd` and `ModemManager` both like to grab USB serial
 devices: `sudo systemctl disable --now gpsd.socket gpsd ModemManager`.
 
