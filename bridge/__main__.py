@@ -36,7 +36,7 @@ log = logging.getLogger("bridge")
 
 
 async def main():
-    log.info("boat-time bridge starting")
+    log.info("seaTime bridge starting")
     log.info("HTTP port:    %d", HTTP_PORT)
 
     # USB GPS, NMEA TCP and N2K CAN run in their own threads; start them first so they

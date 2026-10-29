@@ -1,9 +1,9 @@
-# boat-time
+# seaTime
 
 Dockerized NTP server that sources time datum from SignalK, Starlink, a USB GPS puck, NMEA 0183 over TCP, or NMEA 2000 over CAN
 
 
-![boat-time](assets/screenshots/screenshot.png)
+![seaTime](assets/screenshots/screenshot.png)
 
 ## Why
 
@@ -18,7 +18,7 @@ don't affect your LAN's time service.
 ## Architecture
 
 ```
-SignalK server ──WebSocket──┐           boat-time
+SignalK server ──WebSocket──┐           seaTime
                             │        ┌──────────────────────────┐
 USB GPS puck ──NMEA/serial──┤        │ Python bridge            │
                             │        │  ├─ subscribes SignalK   │
@@ -54,8 +54,8 @@ Optional pool ──NTP─────────┘        │           │  
 ## Quick start
 
 ```bash
-git clone https://github.com/ofernander/boat-time.git
-cd boat-time
+git clone https://github.com/ofernander/seaTime.git
+cd seaTime
 cp .env.example .env
 # edit .env — at minimum set NTP_ALLOW_SUBNETS and one time source
 # (SIGNALK_URL, USB_GPS_DEVICE, NMEA_TCP_HOST, N2K_CAN_INTERFACE, or STARLINK_NTP_IP)
@@ -131,7 +131,7 @@ replugging, restart the container.
 Many marine devices serve NMEA 0183 sentences on a TCP port: NMEA 2000 /
 0183 Ethernet and WiFi gateways (Yacht Devices, Actisense, Digital Yacht,
 Quark-elec...), multiplexers, and SignalK's own NMEA 0183 server. If one of
-them carries sentences from your installed GPS, boat-time can take time from
+them carries sentences from your installed GPS, seaTime can take time from
 it directly, with no SignalK WebSocket hop and no separate USB puck.
 
 1. On the device, enable a **TCP** server that outputs NMEA 0183 and note
@@ -154,15 +154,15 @@ NMEA 0183 (TCP) source's **Last sample** offset.
 ## NMEA 2000 over CAN
 
 With a SocketCAN adapter (a USB-CAN adapter or CAN hat that shows up on the
-host as `can0`), boat-time reads time straight off the NMEA 2000 bus. It uses
+host as `can0`), seaTime reads time straight off the NMEA 2000 bus. It uses
 PGN 126992 (System Time) from your GPS, with no gateway, conversion or network
 in between.
 
-- A kernel filter delivers only PGN 126992 frames to boat-time.
+- A kernel filter delivers only PGN 126992 frames to seaTime.
 - Each frame is timestamped by the kernel as it arrives.
 - Only time marked as GPS or GLONASS is used, so a chartplotter echoing its
   own clock onto the bus is ignored.
-- boat-time never transmits onto the bus.
+- seaTime never transmits onto the bus.
 - SocketCAN gives every frame to every reader, so SignalK can use the same
   interface at the same time.
 
@@ -225,13 +225,13 @@ matches your SignalK security settings:
 
 ## Setting the host clock (optional)
 
-There are two ways to get the Docker host's own clock synced to boat-time.
+There are two ways to get the Docker host's own clock synced to seaTime.
 Pick one, not both.
 
-**Approach A: Let the host's existing NTP client point at boat-time** (recommended).
+**Approach A: Let the host's existing NTP client point at seaTime** (recommended).
 
 The host's existing NTP client (usually `systemd-timesyncd` on Debian/Ubuntu)
-queries boat-time on `127.0.0.1:123` like any other LAN client. Cleanest
+queries seaTime on `127.0.0.1:123` like any other LAN client. Cleanest
 separation — the container stays unprivileged relative to the host clock.
 
 ```bash
@@ -257,7 +257,7 @@ sudo systemctl disable --now systemd-timesyncd
 
 Default (`SET_HOST_CLOCK=false`) means the container serves NTP to the
 LAN but doesn't touch the host clock — suitable for Approach A or for hosts
-that don't need their clock disciplined by boat-time at all.
+that don't need their clock disciplined by seaTime at all.
 
 ## Env vars
 
@@ -346,9 +346,9 @@ NTP server on their LAN (port 123, typically `192.168.100.1`). Enabled by settin
 ## Troubleshooting
 
 - **Container logs:** `docker compose logs -f`
-- **chrony tracking:** `docker exec boat-time chronyc tracking`
-- **chrony sources:** `docker exec boat-time chronyc sources -v`
-- **LAN clients:** `docker exec boat-time chronyc clients`
+- **chrony tracking:** `docker exec seaTime chronyc tracking`
+- **chrony sources:** `docker exec seaTime chronyc sources -v`
+- **LAN clients:** `docker exec seaTime chronyc clients`
 
 **SignalK source shows `^x` (falseticker):** expected when Starlink or pool
 are reachable — SignalK's WebSocket-delivered time has ~100-200ms systematic
@@ -359,7 +359,7 @@ disagree. SignalK will still be used as a fallback when the others go away.
 to a source yet. Wait 1–2 minutes after container start while reach climbs.
 
 **USB GPS shows "disconnected" / "no NMEA data":** check the device is passed
-through (`docker exec boat-time ls -l /dev/gps0`) and that nothing on the host
+through (`docker exec seaTime ls -l /dev/gps0`) and that nothing on the host
 is holding it open. `gpsd` and `ModemManager` both like to grab USB serial
 devices: `sudo systemctl disable --now gpsd.socket gpsd ModemManager`.
 

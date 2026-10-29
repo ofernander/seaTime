@@ -5,3 +5,4 @@ __pycache__/
 .venv/
 MISC/
 docker-compose.override.yml
+.DS_Store

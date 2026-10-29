@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>boat-time</title>
+<title>seaTime</title>
 <style>
   :root {
     --bg: #0f1419;
@@ -143,7 +143,7 @@
 </div>
 
 <footer class="footer">
-  <span id="footer-version">boat-time</span>
+  <span id="footer-version">seaTime</span>
   <span class="footer-sep">-</span>
   <a id="footer-link" href="#" target="_blank" rel="noopener">GitHub</a>
 </footer>
@@ -594,7 +594,7 @@
 
   function renderFooter(data) {
     var app = data.app || {};
-    var version = app.version ? ("boat-time v" + app.version) : "boat-time";
+    var version = app.version ? ("seaTime v" + app.version) : "seaTime";
     $("footer-version").textContent = version;
     if (app.homepage) {
       $("footer-link").href = app.homepage;
