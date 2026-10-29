@@ -1,6 +1,6 @@
 {
   "name": "seatime",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Docker-based NTP server for boats — serves GPS-disciplined time to your LAN from SignalK, Starlink, a USB GPS puck, or other onboard time sources",
   "keywords": [
     "signalk",
